@@ -76,11 +76,4 @@ class HomeViewModel @Inject constructor(
             navigator.showSnack("已删除会话")
         }
     }
-
-    fun clearAll() {
-        viewModelScope.launch {
-            sessionRepo.clearAll()
-            navigator.showSnack("已清空所有会话")
-        }
-    }
 }

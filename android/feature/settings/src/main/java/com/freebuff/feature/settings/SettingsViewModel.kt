@@ -9,19 +9,26 @@ import com.freebuff.core.data.repository.CustomModelRepository
 import com.freebuff.core.data.repository.GitAuthRepository
 import com.freebuff.core.data.repository.GitConnectStep
 import com.freebuff.core.data.repository.ModelCatalogRepository
+import com.freebuff.core.data.repository.SessionRepository
 import com.freebuff.core.data.repository.SettingsRepository
 import com.freebuff.core.data.repository.UpdateRepository
 import com.freebuff.core.model.CustomModel
 import com.freebuff.core.model.GitState
 import com.freebuff.core.model.RemoteVersion
 import com.freebuff.core.model.RepairReport
+import com.freebuff.core.model.mergedModelList
+import com.freebuff.core.model.uid
+import com.freebuff.core.ui.navigation.AppNavState
 import com.freebuff.core.ui.navigation.AppNavigator
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -30,6 +37,7 @@ import javax.inject.Inject
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val settings: SettingsRepository,
+    private val sessionRepo: SessionRepository,
     private val customModelRepo: CustomModelRepository,
     private val catalog: ModelCatalogRepository,
     private val gitAuth: GitAuthRepository,
@@ -54,6 +62,54 @@ class SettingsViewModel @Inject constructor(
 
     val version: StateFlow<String> = settings.version
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "0.1.0")
+
+    /* ---------------- 模型 ---------------- */
+
+    /** 当前模型展示名(官方实时/内置 + 自定义),供设置页「模型」组显示。 */
+    val modelName: StateFlow<String> = combine(
+        catalog.official,
+        customModelRepo.models,
+        settings.modelId,
+    ) { official, customs, id ->
+        mergedModelList(official, customs).firstOrNull { it.id == id }?.name ?: id
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+
+    fun openModelSheet() { navigator.openSheet(AppNavState.SHEET_MODEL) }
+
+    /* ---------------- 会话与数据 ---------------- */
+
+    val sessionCount: StateFlow<Int> = sessionRepo.sessions
+        .map { it.size }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    private val _clearArmed = MutableStateFlow(false)
+    val clearArmed: StateFlow<Boolean> = _clearArmed.asStateFlow()
+
+    private var disarmJob: Job? = null
+
+    /**
+     * 首次点击只「武装」并在 2.2s 后自动解除(与原型 armedClear 一致),
+     * 期间再次点击才真正清除——避免误触直接抹掉全部会话。
+     */
+    fun armClear() {
+        if (_clearArmed.value) return
+        _clearArmed.value = true
+        disarmJob?.cancel()
+        disarmJob = viewModelScope.launch {
+            delay(CLEAR_ARM_MS)
+            _clearArmed.value = false
+        }
+    }
+
+    /** 真正清除全部会话(仅在 [clearArmed] 为 true 时由 UI 调用)。 */
+    fun clearAllSessions() {
+        disarmJob?.cancel()
+        _clearArmed.value = false
+        viewModelScope.launch {
+            sessionRepo.clearAll()
+            navigator.showSnack("已清除全部会话")
+        }
+    }
 
     /* ---------------- 官方模型目录 ---------------- */
 
@@ -182,13 +238,16 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    /** 从表单恢复原始记录(清洗前),仅当迁移时报告过修复。 */
+    /**
+     * 恢复原始记录(清洗前),仅当迁移时报告过修复。
+     * 非对象记录(raw 里的 null)无法落库,自动跳过;ID 为空的原始记录在落库前
+     * 重新生成 ID,避免空主键破坏后续的更新/删除。
+     */
     fun restoreRaw() {
         viewModelScope.launch {
-            val raw = _repairReport.value?.raw?.filterNotNull() ?: return@launch
-            raw.forEach { rec ->
-                (rec as? CustomModel)?.let { customModelRepo.add(it) }
-            }
+            val raw = _repairReport.value?.raw ?: return@launch
+            raw.filterIsInstance<CustomModel>()
+                .forEach { customModelRepo.add(it.copy(id = it.id.ifBlank { "cm-" + uid() })) }
             _repairRestored.value = true
             navigator.showSnack("已恢复原始记录")
         }
@@ -212,5 +271,10 @@ class SettingsViewModel @Inject constructor(
                 is ApiResult.Err -> onResult(null, false, r.error.userMessage)
             }
         }
+    }
+
+    private companion object {
+        /** 「清除全部会话」二次确认的自动解除时长(毫秒)。 */
+        const val CLEAR_ARM_MS = 2200L
     }
 }

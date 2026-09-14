@@ -214,9 +214,10 @@ private fun RepairBanner(vm: SettingsViewModel, rep: com.freebuff.core.model.Rep
                 rep.items.forEach { it ->
                     val line = it.fixes.joinToString(" ") { f ->
                         when (f.code) {
-                            "drop" -> "丢弃非对象记录"
+                            "drop" -> "非对象记录,已移除(无法恢复)"
+                            "id" -> "生成缺失 ID"
                             "name" -> "补全名称为「未命名模型」"
-                            "field" -> "清理空字段"
+                            "field" -> if (f.n > 1) "清理 " + f.n + " 个空字段" else "清理空字段"
                             "models" -> "过滤 " + f.n + " 项非文本快照"
                             else -> f.code
                         }
@@ -236,17 +237,26 @@ private fun RepairBanner(vm: SettingsViewModel, rep: com.freebuff.core.model.Rep
                 modifier = Modifier.padding(top = 3.dp))
             rep.items.forEach { it ->
                 if (it.fixes.any { f -> f.code == "drop" }) {
-                    Text("· 第 " + it.i + " 条:该记录已丢弃 → 恢复后将重新出现", color = t.text2, fontSize = 11.sp,
+                    Text("· 第 " + it.i + " 条:非对象/空记录,已丢弃,无法恢复", color = t.text2, fontSize = 11.sp,
                         modifier = Modifier.padding(top = 7.dp))
                 } else {
                     val raw = it.raw as? CustomModel
                     val fx = it.fixed as? CustomModel
                     val diffs = mutableListOf<String>()
-                    it.fixes.forEach { f ->
-                        when (f.code) {
-                            "name" -> diffs.add("名称「" + (raw?.name ?: "") + "」→「" + (fx?.name ?: "") + "」")
-                            "field" -> diffs.add("Base URL / 模型 ID 空字段已清理")
-                            "models" -> diffs.add("快照过滤 " + f.n + " 项非文本 → 剩 " + (fx?.models?.size ?: 0) + " 项")
+                    if (raw != null && fx != null) {
+                        if (raw.id != fx.id) diffs.add("ID " + raw.id.ifBlank { "空" } + " → " + fx.id)
+                        if (raw.name != fx.name) diffs.add("名称「" + raw.name + "」→「" + fx.name + "」")
+                        if (raw.apiId != fx.apiId) diffs.add("模型 ID「" + raw.apiId + "」→「」(空字段已清理)")
+                        if (raw.base != fx.base) diffs.add("Base URL「" + raw.base + "」→「」(空字段已清理)")
+                        if (raw.models != fx.models) diffs.add("快照过滤 " + (raw.models.size - fx.models.size) + " 项 → 剩 " + fx.models.size + " 项")
+                    } else {
+                        it.fixes.forEach { f ->
+                            when (f.code) {
+                                "id" -> diffs.add("生成缺失 ID")
+                                "name" -> diffs.add("名称「" + (raw?.name ?: "") + "」→「" + (fx?.name ?: "") + "」")
+                                "field" -> diffs.add("Base URL / 模型 ID 空字段已清理")
+                                "models" -> diffs.add("快照过滤 " + f.n + " 项非文本 → 剩 " + (fx?.models?.size ?: 0) + " 项")
+                            }
                         }
                     }
                     Text("· 第 " + it.i + " 条 原始 → 已修复:", color = t.text2, fontSize = 11.sp,

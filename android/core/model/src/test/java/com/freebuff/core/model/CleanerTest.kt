@@ -31,11 +31,26 @@ class CleanerTest {
     }
 
     @Test
-    fun `丢弃 id 为空的条目`() {
+    fun `空 ID 生成新 ID 并保留记录`() {
         val (out, rep) = sanitizeCustomModels(listOf(model(id = "  ")))
-        assertTrue(out.isEmpty())
+        assertEquals(1, out.size)
+        assertTrue(out[0].id.startsWith("cm-"))
         assertEquals(1, rep.fixed)
-        assertEquals("drop", rep.items[0].fixes[0].code)
+        assertEquals("id", rep.items[0].fixes[0].code)
+        // 差异可见:raw 保留原始空 ID
+        val raw = rep.items[0].raw as CustomModel
+        assertEquals("  ", raw.id)
+        assertEquals(out[0], rep.items[0].fixed)
+    }
+
+    @Test
+    fun `null 条目记 drop 且 raw 为 null`() {
+        val (out, rep) = sanitizeCustomModels(listOf(null, model()))
+        assertEquals(1, out.size)
+        val item = rep.items.first { it.fixes.any { f -> f.code == "drop" } }
+        assertEquals(1, item.i)
+        assertEquals(null, item.raw)
+        assertEquals(null, item.fixed)
     }
 
     @Test
@@ -81,5 +96,28 @@ class CleanerTest {
         val item = rep.items[0]
         assertEquals(raw, item.raw)
         assertEquals(out[0], item.fixed)
+    }
+
+    @Test
+    fun `混合脏数据统计正确`() {
+        val list = listOf<CustomModel?>(null, model(), model(id = ""), model(name = " "))
+        val (out, rep) = sanitizeCustomModels(list)
+        // null 丢弃,其余 3 条都保留(空 ID 生成后保留)
+        assertEquals(3, out.size)
+        assertEquals(3, rep.fixed)
+        assertEquals(4, rep.rawN)
+        assertEquals(3, rep.nowN)
+        assertEquals("drop", rep.items[0].fixes[0].code)
+        assertTrue(rep.items[1].fixes.any { it.code == "id" })
+        assertTrue(rep.items[2].fixes.any { it.code == "name" })
+    }
+
+    @Test
+    fun `报告 raw 列表包含 null 占位`() {
+        val rawList = listOf<CustomModel?>(null, model())
+        val (_, rep) = sanitizeCustomModels(rawList)
+        assertEquals(2, rep.raw?.size)
+        assertEquals(null, rep.raw?.get(0))
+        assertEquals(model(), rep.raw?.get(1))
     }
 }

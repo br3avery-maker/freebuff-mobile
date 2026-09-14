@@ -21,7 +21,10 @@ import com.freebuff.core.ui.RFull
 import com.freebuff.core.ui.navigation.LocalAppNavigator
 import com.freebuff.core.ui.theme.LocalTokens
 
-/** 会话菜单:删除单个会话 / 清空全部。 */
+/**
+ * 会话菜单:删除单个会话。
+ * 「清空全部会话」已移到 设置 → 会话与数据(带二次确认),此处不再提供一键直删入口。
+ */
 @Composable
 fun SessionMenuSheet(sessionId: String, viewModel: HomeViewModel = hiltViewModel()) {
     val t = LocalTokens.current
@@ -35,11 +38,6 @@ fun SessionMenuSheet(sessionId: String, viewModel: HomeViewModel = hiltViewModel
         Text("删除会话", color = t.danger, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold,
             modifier = Modifier.fillMaxWidth().clip(RFull).clickable {
                 viewModel.deleteSession(sessionId)
-                navigator.openSheet(null)
-            }.padding(vertical = 11.dp))
-        Text("清空所有会话", color = t.danger, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.fillMaxWidth().clip(RFull).clickable {
-                viewModel.clearAll()
                 navigator.openSheet(null)
             }.padding(vertical = 11.dp))
         Text("取消", color = t.text3, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold,

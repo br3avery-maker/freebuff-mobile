@@ -28,6 +28,7 @@ data class AppNavState(
         const val SHEET_CUSTOM_MODELS = "custom-models"
         const val SHEET_CUSTOM_FORM = "custom-form"
         const val SHEET_UPDATE = "update"
+        const val SHEET_ABOUT = "about"
     }
 }
 

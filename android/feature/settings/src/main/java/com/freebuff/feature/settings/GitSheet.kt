@@ -1,7 +1,5 @@
 package com.freebuff.feature.settings
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -33,6 +31,7 @@ import com.freebuff.core.data.repository.GitConnectStep
 import com.freebuff.core.ui.R14
 import com.freebuff.core.ui.RFull
 import com.freebuff.core.ui.SheetScaffold
+import com.freebuff.core.ui.openExternal
 import com.freebuff.core.ui.navigation.LocalAppNavigator
 import com.freebuff.core.ui.theme.LocalTokens
 
@@ -61,7 +60,7 @@ fun GitSheet(viewModel: SettingsViewModel = hiltViewModel()) {
     // 拿到用户码后自动拉起浏览器授权页(仅一次)
     val awaiting = step as? GitConnectStep.AwaitingUser
     LaunchedEffect(awaiting?.userCode) {
-        awaiting?.let { openUri(context, it.verificationUri) }
+        awaiting?.let { openExternal(context, it.verificationUri) }
     }
 
     SheetScaffold("Git 账号", "关联后可在发起任务时直接读取你的仓库") {
@@ -79,7 +78,7 @@ fun GitSheet(viewModel: SettingsViewModel = hiltViewModel()) {
             step is GitConnectStep.AwaitingUser -> AwaitingCard(
                 userCode = (step as GitConnectStep.AwaitingUser).userCode,
                 verificationUri = (step as GitConnectStep.AwaitingUser).verificationUri,
-                onOpen = { uri -> openUri(context, uri) },
+                onOpen = { uri -> openExternal(context, uri) },
                 onCopy = { code -> clipboard.setText(AnnotatedString(code)) },
                 onCancel = { viewModel.cancelGitConnect() },
             )
@@ -181,10 +180,4 @@ private fun ProviderList(
         Text("将通过 GitHub 设备流授权(浏览器输入用户码),只读取账号与仓库列表",
             color = t.text3, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp, start = 4.dp))
     }
-}
-
-private fun openUri(context: android.content.Context, uri: String) {
-    if (uri.isBlank()) return
-    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(uri)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    runCatching { context.startActivity(intent) }
 }

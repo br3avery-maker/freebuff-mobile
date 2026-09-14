@@ -4,6 +4,14 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/* ---------------- 官方地址(设置 → 关于) ---------------- */
+
+/** 官方网站,由「关于 → 官方网站」在浏览器打开。 */
+const val OFFICIAL_SITE = "https://freebuff.com"
+
+/** 反馈入口,由「关于 → 反馈与建议」在浏览器打开(官方开源仓库的 issue 页)。 */
+const val FEEDBACK_URL = "https://github.com/CodebuffAI/freebuff/issues"
+
 /* ---------------- URL 工具:协议自动补全 + 完整请求路径 ---------------- */
 
 /** 协议自动补全:无 scheme 时补 https://。空串原样返回。 */

@@ -48,6 +48,7 @@ import com.freebuff.feature.chat.HomeScreen
 import com.freebuff.feature.chat.ModelSheet
 import com.freebuff.feature.chat.SessionMenuSheet
 import com.freebuff.feature.chat.TaskWizardSheet
+import com.freebuff.feature.settings.AboutSheet
 import com.freebuff.feature.settings.CustomModelFormSheet
 import com.freebuff.feature.settings.CustomModelsSheet
 import com.freebuff.feature.settings.GitSheet
@@ -126,6 +127,7 @@ fun FreebuffRoot(navigator: AppNavigator) {
                                     AppNavState.SHEET_GIT -> GitSheet()
                                     AppNavState.SHEET_CUSTOM_MODELS -> CustomModelsSheet()
                                     AppNavState.SHEET_UPDATE -> UpdateSheet()
+                                    AppNavState.SHEET_ABOUT -> AboutSheet()
                                     else -> {
                                         val prefix = AppNavState.SHEET_CUSTOM_FORM + ":"
                                         if (id.startsWith(prefix)) {

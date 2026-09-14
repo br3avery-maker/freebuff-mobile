@@ -1,5 +1,8 @@
 package com.freebuff.core.ui
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -57,7 +60,7 @@ fun RowCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -
 
 /**
  * 设置行。trailing 默认按其文本高低亮;accent=true 时强制高亮(如"已连接"状态),
- * accent=false 且文本是"未连接/未添加"时置灰。
+ * accent=false 且文本是"未连接/未添加"时置灰。danger=true 用于破坏性操作(整行红色)。
  */
 @Composable
 fun SetRow(
@@ -66,6 +69,7 @@ fun SetRow(
     sub: String = "",
     trailing: String = "",
     accent: Boolean = false,
+    danger: Boolean = false,
     onClick: (() -> Unit)? = null,
 ) {
     val t = LocalTokens.current
@@ -77,12 +81,14 @@ fun SetRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            modifier = Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(t.accentSoft),
+            modifier = Modifier.size(34.dp).clip(RoundedCornerShape(10.dp))
+                .background(if (danger) t.danger.copy(alpha = 0.14f) else t.accentSoft),
             contentAlignment = Alignment.Center,
-        ) { Text(icon, fontSize = 16.sp, color = t.accent) }
+        ) { Text(icon, fontSize = 16.sp, color = if (danger) t.danger else t.accent) }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, color = t.text, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold)
+            Text(title, color = if (danger) t.danger else t.text, fontSize = 14.5.sp,
+                fontWeight = FontWeight.SemiBold)
             if (sub.isNotEmpty()) Text(
                 sub, color = t.text3, fontSize = 11.5.sp, lineHeight = 15.sp,
                 modifier = Modifier.padding(top = 2.dp),
@@ -96,6 +102,13 @@ fun SetRow(
             )
         }
     }
+}
+
+/** 在浏览器/系统应用中打开外部链接(缺省浏览器不存在时静默失败,不阻塞 UI)。 */
+fun openExternal(context: Context, url: String) {
+    if (url.isBlank()) return
+    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    runCatching { context.startActivity(intent) }
 }
 
 @Composable

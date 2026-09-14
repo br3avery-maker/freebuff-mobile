@@ -28,8 +28,22 @@ class DataMigrator @Inject constructor(
     private val dao: FreebuffDao,
     private val crypto: CryptoManager,
 ) {
-    /** 返回修复报告(仅当清洗过程修复过脏数据)。 */
+    companion object {
+        /** 一次性迁移完成标志。写入后不再重放迁移。 */
+        const val KEY_MIGRATED = "migrated_v2"
+    }
+
+    /**
+     * 一次性迁移,返回修复报告(仅当清洗过程修复过脏数据)。
+     *
+     * 已迁移过([KEY_MIGRATED] 为 true)时直接返回 null 且不触碰任何数据。
+     * 这个守卫是必需的:迁移里含「会话表为空则灌入演示会话」与「用旧偏好覆写设置键」,
+     * 若每次冷启动都重放,会导致清空会话后重启时演示会话复活,以及主题/模型/自定义模型
+     * 被旧偏好回滚。
+     */
     suspend fun migrate(legacy: SharedPreferences): RepairReport? {
+        if (legacy.getBoolean(KEY_MIGRATED, false)) return null
+
         var report: RepairReport? = null
 
         // 1. 自定义模型:解析 → 清洗 → 加密 → 落库
@@ -64,7 +78,7 @@ class DataMigrator @Inject constructor(
             seedSessions()
         }
 
-        legacy.edit().putBoolean("migrated_v2", true).apply()
+        legacy.edit().putBoolean(KEY_MIGRATED, true).apply()
         return report
     }
 
@@ -77,12 +91,17 @@ class DataMigrator @Inject constructor(
         }
     }
 
-    private fun parseLegacyCustomModels(s: String): List<CustomModel> {
+    /**
+     * 解析旧版自定义模型 JSON。**保留位置**:非对象条目(字符串/数字/JSON null)映射为 null,
+     * 交给 [sanitizeCustomModels] 报告为 drop——否则解析阶段提前丢掉会导致报告看不到「丢弃非对象记录」,
+     * 且 rawN 统计的不是真实原始条数。
+     */
+    private fun parseLegacyCustomModels(s: String): List<CustomModel?> {
         if (s.isBlank()) return emptyList()
         return try {
             val arr = JSONArray(s)
-            (0 until arr.length()).mapNotNull { i ->
-                val o = arr.optJSONObject(i) ?: return@mapNotNull null
+            (0 until arr.length()).map { i ->
+                val o = arr.optJSONObject(i) ?: return@map null
                 val ms = o.optJSONArray("models")
                 val models = if (ms == null) emptyList()
                 else (0 until ms.length()).mapNotNull { j -> ms.optString(j).takeIf { it.isNotEmpty() } }
