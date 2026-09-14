@@ -1,10 +1,26 @@
 name: Android CI
 
+# 只在 Android 工程或本工作流自身变化时运行 —— 纯文档改动不值得花一次
+# 11 分钟的完整构建。注意 push 的 paths 过滤按「这次推上去的所有提交」合并求值:
+# 只要其中任一提交改了 android/**, 就会触发; 只有整次推送都不涉及时才跳过。
 on:
   push:
     branches: [main, develop]
+    paths:
+      - 'android/**'
+      - '.github/workflows/android.yml'
   pull_request:
     branches: [main]
+    paths:
+      - 'android/**'
+      - '.github/workflows/android.yml'
+  # 允许在 Actions 页面手动触发(例如想重新产出 APK 制品时), 不受 paths 限制
+  workflow_dispatch:
+
+# 同一分支/PR 连续推送时, 取消还在跑的旧一轮, 避免排队叠加
+concurrency:
+  group: android-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -20,7 +36,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
