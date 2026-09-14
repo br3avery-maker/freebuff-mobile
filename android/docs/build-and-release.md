@@ -24,8 +24,12 @@ scripts/gradle.sh :app:assembleDebug
 > 是机器专属的,入库后会让 GitHub Actions(ubuntu)因找不到目录而直接构建失败。
 > 若要用自己的 JDK 17 或 Gradle,设 `FREE_BUFF_JDK` / `FREE_BUFF_GRADLE` 覆盖。
 
-依赖仓库在 `settings.gradle.kts` 中**阿里云镜像优先**(本机直连 mavenCentral / gradlePluginPortal 会长时间阻塞),
-并保留官方源作为兜底 —— 镜像命中时不会走到官方源,海外 CI runner 或镜像缺失的构件才会回退。
+依赖仓库在 `settings.gradle.kts` 中**按环境切换优先级**(两套仓库都在列表里, 只是先后不同):
+
+| 环境 | 顺序 | 理由 |
+|---|---|---|
+| 本机(`CI` 未设) | 阿里云镜像 → 官方源 | 本机直连 mavenCentral / gradlePluginPortal 会长时间阻塞 |
+| CI(`CI=true`) | 官方源 → 阿里云镜像 | 镜像对个别构件会返回 502 / 缺件, 空缓存的新 runner 上会把插件解析打挂; runner 本身直连官方源正常 |
 
 ## 2. 打包命令
 
