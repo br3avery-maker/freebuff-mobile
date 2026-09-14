@@ -1,0 +1,18 @@
+# Freebuff 本地工具状态(项目 id、预览日志、运行文档) —— 机器相关, 不入库
+.freebuff/
+
+# 构建产物(各模块共用; android/.gitignore 中另有更细的规则)
+build/
+.gradle/
+
+# 签名文件与口令: 绝不入库
+*.jks
+*.keystore
+keystore.properties
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db

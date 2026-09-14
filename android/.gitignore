@@ -1,0 +1,28 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+/build
+build/
+/captures
+.externalNativeBuild
+.cxx
+app/build
+
+/.toolchain
+
+# 本地构建工具链 (JDK/SDK/Gradle, 体积大, 不入库)
+.toolchain/
+build-log.txt
+build-log.err.txt
+rel-log.txt
+test-log.txt
+local.properties
+
+# 打包产物归档 (可由 dist 目录自行生成)
+/dist
+
+# 签名文件严禁入库
+*.jks
+*.keystore
+keystore.properties

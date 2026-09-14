@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!-- 跳过 TLS 校验是用户显式开启的功能(clientFor skipTLS):
+        仅当用户对某个自定义模型勾选「跳过 TLS 校验」时才创建信任所有证书的
+        TrustManager,其余请求一律走系统证书校验。此告警属预期行为,予以豁免。 -->
+    <issue id="TrustAllX509TrustManager" severity="ignore" />
+
+    <!-- adaptive-icon 规范要求 v26 限定目录(与 minSdk 无关),
+        lint 的 ObsoleteSdkInt 对该目录属误报,予以豁免。 -->
+    <issue id="ObsoleteSdkInt">
+        <ignore path="src/main/res/mipmap-anydpi-v26" />
+    </issue>
+</lint>
