@@ -31,14 +31,15 @@ jobs:
       - name: Set up Gradle (dependency cache)
         uses: gradle/actions/setup-gradle@v4
 
+      # --stacktrace:失败时直接给出仓库/依赖级别的真实原因, 不用再补一次只能看个结论的构建
       - name: Unit tests (pure JVM + MockWebServer)
-        run: ./gradlew :core:model:test :core:data:testDebugUnitTest --no-daemon
+        run: ./gradlew :core:model:test :core:data:testDebugUnitTest --no-daemon --stacktrace
 
       - name: Lint
-        run: ./gradlew lintDebug --no-daemon
+        run: ./gradlew lintDebug --no-daemon --stacktrace
 
       - name: Build release APK (R8)
-        run: ./gradlew :app:assembleRelease --no-daemon
+        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
 
       - name: Upload release APK
         uses: actions/upload-artifact@v4
