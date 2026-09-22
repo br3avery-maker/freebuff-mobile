@@ -10,6 +10,7 @@ import com.freebuff.core.data.db.SettingEntity
 import com.freebuff.core.data.security.CryptoManager
 import com.freebuff.core.model.SEED_SESSIONS
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -308,9 +309,9 @@ class DataMigratorTest {
         }
 
         override fun observeSessionsWithMessages(): Flow<List<SessionWithMessages>> = flowOf(emptyList())
-        override fun sessionWithMessages(id: String): SessionWithMessages? = null
-        override fun allSessions(): List<SessionEntity> = sessions.values.toList()
-        override fun session(id: String): SessionEntity? = sessions[id]
+        override suspend fun sessionWithMessages(id: String): SessionWithMessages? = null
+        override suspend fun allSessions(): List<SessionEntity> = sessions.values.toList()
+        override suspend fun session(id: String): SessionEntity? = sessions[id]
         override suspend fun upsertSession(session: SessionEntity) {
             upsertSessionCalls++
             sessions[session.id] = session
@@ -345,8 +346,8 @@ class DataMigratorTest {
         override fun observeCustomModels(): Flow<List<CustomModelEntity>> =
             flowOf(customModels.values.toList())
 
-        override fun customModel(id: String): CustomModelEntity? = customModels[id]
-        override fun allCustomModels(): List<CustomModelEntity> = customModels.values.toList()
+        override suspend fun customModel(id: String): CustomModelEntity? = customModels[id]
+        override suspend fun allCustomModels(): List<CustomModelEntity> = customModels.values.toList()
 
         override suspend fun upsertCustomModel(model: CustomModelEntity) {
             upsertCustomModelCalls++
@@ -362,14 +363,14 @@ class DataMigratorTest {
             customModels.clear()
         }
 
-        override fun allSettings(): List<SettingEntity> =
+        override suspend fun allSettings(): List<SettingEntity> =
             settings.map { (k, v) -> SettingEntity(k, v) }
 
-        override fun setting(key: String): SettingEntity? =
+        override suspend fun setting(key: String): SettingEntity? =
             settings[key]?.let { SettingEntity(key, it) }
 
         override fun observeSetting(key: String): Flow<SettingEntity?> =
-            flowOf(setting(key))
+            flow { emit(setting(key)) }
 
         override suspend fun upsertSetting(setting: SettingEntity) {
             upsertSettingCalls++
@@ -388,9 +389,9 @@ class DataMigratorTest {
     /** 空实现 DAO:只关心 migrate 返回值,不检查落库。 */
     private class FakeDao : FreebuffDao {
         override fun observeSessionsWithMessages(): Flow<List<SessionWithMessages>> = flowOf(emptyList())
-        override fun sessionWithMessages(id: String): SessionWithMessages? = null
-        override fun allSessions(): List<SessionEntity> = emptyList()
-        override fun session(id: String): SessionEntity? = null
+        override suspend fun sessionWithMessages(id: String): SessionWithMessages? = null
+        override suspend fun allSessions(): List<SessionEntity> = emptyList()
+        override suspend fun session(id: String): SessionEntity? = null
         override suspend fun upsertSession(session: SessionEntity) = Unit
         override suspend fun deleteSession(id: String) = Unit
         override suspend fun clearSessions() = Unit
@@ -399,13 +400,13 @@ class DataMigratorTest {
         override suspend fun deleteMessages(sessionId: String) = Unit
         override suspend fun clearMessages() = Unit
         override fun observeCustomModels(): Flow<List<CustomModelEntity>> = flowOf(emptyList())
-        override fun customModel(id: String): CustomModelEntity? = null
-        override fun allCustomModels(): List<CustomModelEntity> = emptyList()
+        override suspend fun customModel(id: String): CustomModelEntity? = null
+        override suspend fun allCustomModels(): List<CustomModelEntity> = emptyList()
         override suspend fun upsertCustomModel(model: CustomModelEntity) = Unit
         override suspend fun deleteCustomModel(id: String) = Unit
         override suspend fun clearCustomModels() = Unit
-        override fun allSettings(): List<SettingEntity> = emptyList()
-        override fun setting(key: String): SettingEntity? = null
+        override suspend fun allSettings(): List<SettingEntity> = emptyList()
+        override suspend fun setting(key: String): SettingEntity? = null
         override fun observeSetting(key: String): Flow<SettingEntity?> = flowOf(null)
         override suspend fun upsertSetting(setting: SettingEntity) = Unit
         override suspend fun deleteSetting(key: String) = Unit

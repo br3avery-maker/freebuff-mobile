@@ -172,7 +172,7 @@ class RealGitAuthRepositoryTest {
     private class SettingsDao : FreebuffDao {
         private val store = LinkedHashMap<String, String>()
 
-        override fun setting(key: String): SettingEntity? = store[key]?.let { SettingEntity(key, it) }
+        override suspend fun setting(key: String): SettingEntity? = store[key]?.let { SettingEntity(key, it) }
 
         // 每次收集时读取当前值(不能在构造期快照,否则读到的永远是历史状态)
         override fun observeSetting(key: String): Flow<SettingEntity?> = flow { emit(setting(key)) }
@@ -188,11 +188,11 @@ class RealGitAuthRepositoryTest {
             store.clear()
         }
 
-        override fun allSettings(): List<SettingEntity> = store.map { SettingEntity(it.key, it.value) }
+        override suspend fun allSettings(): List<SettingEntity> = store.map { SettingEntity(it.key, it.value) }
         override fun observeSessionsWithMessages(): Flow<List<SessionWithMessages>> = flowOf(emptyList())
-        override fun sessionWithMessages(id: String): SessionWithMessages? = null
-        override fun allSessions(): List<SessionEntity> = emptyList()
-        override fun session(id: String): SessionEntity? = null
+        override suspend fun sessionWithMessages(id: String): SessionWithMessages? = null
+        override suspend fun allSessions(): List<SessionEntity> = emptyList()
+        override suspend fun session(id: String): SessionEntity? = null
         override suspend fun upsertSession(session: SessionEntity) = unsupported()
         override suspend fun deleteSession(id: String) = unsupported()
         override suspend fun clearSessions() = unsupported()
@@ -201,8 +201,8 @@ class RealGitAuthRepositoryTest {
         override suspend fun deleteMessages(sessionId: String) = unsupported()
         override suspend fun clearMessages() = unsupported()
         override fun observeCustomModels(): Flow<List<CustomModelEntity>> = flowOf(emptyList())
-        override fun customModel(id: String): CustomModelEntity? = null
-        override fun allCustomModels(): List<CustomModelEntity> = emptyList()
+        override suspend fun customModel(id: String): CustomModelEntity? = null
+        override suspend fun allCustomModels(): List<CustomModelEntity> = emptyList()
         override suspend fun upsertCustomModel(model: CustomModelEntity) = unsupported()
         override suspend fun deleteCustomModel(id: String) = unsupported()
         override suspend fun clearCustomModels() = unsupported()

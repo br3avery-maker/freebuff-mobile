@@ -155,9 +155,9 @@ class CustomModelRepositoryTest {
     // ---------- DAO 桩:本测试仅覆盖不触碰数据库的网络/纯逻辑方法 ----------
     private class NoopDao : FreebuffDao {
         override fun observeSessionsWithMessages(): Flow<List<SessionWithMessages>> = flowOf(emptyList())
-        override fun sessionWithMessages(id: String): SessionWithMessages? = null
-        override fun allSessions(): List<SessionEntity> = emptyList()
-        override fun session(id: String): SessionEntity? = null
+        override suspend fun sessionWithMessages(id: String): SessionWithMessages? = null
+        override suspend fun allSessions(): List<SessionEntity> = emptyList()
+        override suspend fun session(id: String): SessionEntity? = null
         override suspend fun upsertSession(session: SessionEntity) = unsupported()
         override suspend fun deleteSession(id: String) = unsupported()
         override suspend fun clearSessions() = unsupported()
@@ -166,13 +166,13 @@ class CustomModelRepositoryTest {
         override suspend fun deleteMessages(sessionId: String) = unsupported()
         override suspend fun clearMessages() = unsupported()
         override fun observeCustomModels(): Flow<List<CustomModelEntity>> = flowOf(emptyList())
-        override fun customModel(id: String): CustomModelEntity? = null
-        override fun allCustomModels(): List<CustomModelEntity> = emptyList()
+        override suspend fun customModel(id: String): CustomModelEntity? = null
+        override suspend fun allCustomModels(): List<CustomModelEntity> = emptyList()
         override suspend fun upsertCustomModel(model: CustomModelEntity) = unsupported()
         override suspend fun deleteCustomModel(id: String) = unsupported()
         override suspend fun clearCustomModels() = unsupported()
-        override fun allSettings(): List<SettingEntity> = emptyList()
-        override fun setting(key: String): SettingEntity? = null
+        override suspend fun allSettings(): List<SettingEntity> = emptyList()
+        override suspend fun setting(key: String): SettingEntity? = null
         override fun observeSetting(key: String): Flow<SettingEntity?> = flowOf(null)
         override suspend fun upsertSetting(setting: SettingEntity) = unsupported()
         override suspend fun deleteSetting(key: String) = unsupported()

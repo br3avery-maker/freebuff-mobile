@@ -102,14 +102,19 @@ class TaskWizardViewModel @Inject constructor(
 
     fun next() {
         val d = _draft.value
-        val ok = when (d.repoMode) {
-            "manual" -> d.repoUrl.isNotBlank() &&
-                (repoParse.value != "strict" || parseClone(d.repoUrl) != null || d.repoUrl.contains("/"))
-            "git" -> d.repoName.isNotBlank()
-            else -> true
+        when (d.step) {
+            0 -> {
+                val ok = when (d.repoMode) {
+                    "manual" -> d.repoUrl.isNotBlank() &&
+                        (repoParse.value != "strict" || parseClone(d.repoUrl) != null || d.repoUrl.contains("/"))
+                    "git" -> d.repoName.isNotBlank()
+                    else -> true
+                }
+                if (ok) _draft.update { it.copy(step = 1) }
+                else navigator.showSnack(if (d.repoMode == "git") "请先选择一个仓库" else "仓库地址不完整")
+            }
+            else -> _draft.update { it.copy(step = (it.step + 1).coerceAtMost(2)) }
         }
-        if (ok) _draft.update { it.copy(step = 1) }
-        else navigator.showSnack(if (d.repoMode == "git") "请先选择一个仓库" else "仓库地址不完整")
     }
 
     /**

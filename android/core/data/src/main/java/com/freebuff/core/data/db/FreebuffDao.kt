@@ -18,13 +18,13 @@ interface FreebuffDao {
 
     @Transaction
     @Query("SELECT * FROM sessions WHERE id = :id LIMIT 1")
-    fun sessionWithMessages(id: String): SessionWithMessages?
+    suspend fun sessionWithMessages(id: String): SessionWithMessages?
 
     @Query("SELECT * FROM sessions")
-    fun allSessions(): List<SessionEntity>
+    suspend fun allSessions(): List<SessionEntity>
 
     @Query("SELECT * FROM sessions WHERE id = :id LIMIT 1")
-    fun session(id: String): SessionEntity?
+    suspend fun session(id: String): SessionEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertSession(session: SessionEntity)
@@ -52,10 +52,10 @@ interface FreebuffDao {
     fun observeCustomModels(): Flow<List<CustomModelEntity>>
 
     @Query("SELECT * FROM custom_models WHERE id = :id LIMIT 1")
-    fun customModel(id: String): CustomModelEntity?
+    suspend fun customModel(id: String): CustomModelEntity?
 
     @Query("SELECT * FROM custom_models")
-    fun allCustomModels(): List<CustomModelEntity>
+    suspend fun allCustomModels(): List<CustomModelEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertCustomModel(model: CustomModelEntity)
@@ -68,10 +68,10 @@ interface FreebuffDao {
 
     // ---------- settings ----------
     @Query("SELECT * FROM settings")
-    fun allSettings(): List<SettingEntity>
+    suspend fun allSettings(): List<SettingEntity>
 
     @Query("SELECT * FROM settings WHERE key = :key LIMIT 1")
-    fun setting(key: String): SettingEntity?
+    suspend fun setting(key: String): SettingEntity?
 
     @Query("SELECT * FROM settings WHERE key = :key LIMIT 1")
     fun observeSetting(key: String): Flow<SettingEntity?>

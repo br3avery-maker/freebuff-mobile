@@ -162,7 +162,8 @@ fun FreebuffRoot(navigator: AppNavigator) {
                                     AppNavState.SHEET_ABOUT -> AboutSheet()
                                     else -> {
                                         val prefix = AppNavState.SHEET_CUSTOM_FORM + ":"
-                                        if (id.startsWith(prefix)) {
+                                        // 兼容两种标识:裸 "custom-form"(新建)与 "custom-form:<id>"(编辑)
+                                        if (id == AppNavState.SHEET_CUSTOM_FORM || id.startsWith(prefix)) {
                                             CustomModelFormSheet(editId = id.removePrefix(prefix))
                                         }
                                     }
