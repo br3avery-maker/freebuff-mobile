@@ -33,9 +33,11 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.freebuff.core.model.TaskDraft
 import com.freebuff.core.model.parseClone
+import androidx.compose.runtime.LaunchedEffect
 import com.freebuff.core.ui.R14
 import com.freebuff.core.ui.RFull
 import com.freebuff.core.ui.SheetScaffold
+import com.freebuff.core.ui.navigation.AppNavState
 import com.freebuff.core.ui.navigation.LocalAppNavigator
 import com.freebuff.core.ui.theme.LocalTokens
 import com.freebuff.core.model.normRepoUrl
@@ -190,13 +192,17 @@ private fun GitRepos(vm: TaskWizardViewModel, d: TaskDraft) {
             Text("尚未关联 Git 账号,去 设置 → 集成 → Git 账号 关联后即可读取仓库", color = t.text3, fontSize = 12.5.sp)
             Spacer(Modifier.height(10.dp))
             Text("立即关联", color = t.accentInk, fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                modifier = Modifier.clip(R14).background(t.accent).clickable { navigator.openSheet("git") }
+                modifier = Modifier.clip(R14).background(t.accent).clickable { navigator.openSheet(AppNavState.SHEET_GIT, AppNavState.SHEET_TASK) }
                     .padding(horizontal = 14.dp, vertical = 8.dp))
         }
     } else {
         val repos by vm.repos.collectAsState()
         val loading by vm.reposLoading.collectAsState()
         val error by vm.reposError.collectAsState()
+        // 从 Git 授权弹层回到向导时,账号状态可能刚变,自动刷新一次仓库列表
+        LaunchedEffect(git.connected, git.login) {
+            if (git.connected) vm.loadRepos()
+        }
         when {
             loading -> {
                 Text("正在读取仓库列表…", color = t.text3, fontSize = 12.5.sp)
@@ -279,8 +285,10 @@ private fun DescStep(vm: TaskWizardViewModel, d: TaskDraft, modelList: List<com.
     val t = LocalTokens.current
     Column(Modifier.fillMaxWidth().clip(R14).background(t.surface2).padding(12.dp)) {
         androidx.compose.foundation.text.BasicTextField(
-            value = d.desc,
-            onValueChange = { v -> vm.update { d.copy(desc = v) } },
+            value = d.desc,                    onValueChange = { v ->
+                        // 与 DESC_MAX 一致:超限直接截断,避免提交时才报错
+                        vm.update { d.copy(desc = if (v.length > 500) v.take(500) else v) }
+                    },
             modifier = Modifier.fillMaxWidth().heightIn(min = 110.dp),
             textStyle = androidx.compose.ui.text.TextStyle(color = t.text, fontSize = 13.5.sp, lineHeight = 20.sp),
             decorationBox = { inner ->
@@ -291,7 +299,8 @@ private fun DescStep(vm: TaskWizardViewModel, d: TaskDraft, modelList: List<com.
             },
         )
         Spacer(Modifier.height(6.dp))
-        Text(d.desc.length.toString() + " / 500", color = t.text3, fontSize = 10.5.sp,
+        Text(d.desc.length.toString() + " / 500", color = if (d.desc.length >= 500) t.warn else t.text3,
+            fontSize = 10.5.sp, fontWeight = if (d.desc.length >= 500) FontWeight.Bold else FontWeight.Normal,
             modifier = Modifier.align(Alignment.End))
     }
     Spacer(Modifier.height(10.dp))

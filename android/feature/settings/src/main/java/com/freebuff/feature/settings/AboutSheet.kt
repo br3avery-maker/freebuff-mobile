@@ -67,7 +67,7 @@ fun AboutSheet(viewModel: SettingsViewModel = hiltViewModel()) {
                 color = t.accentInk, fontSize = 13.5.sp, fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().clip(RFull).background(t.accent)
-                    .clickable { navigator.openSheet(null) }.padding(vertical = 12.dp),
+                    .clickable { navigator.closeSheet() }.padding(vertical = 12.dp),
             )
         }
     }

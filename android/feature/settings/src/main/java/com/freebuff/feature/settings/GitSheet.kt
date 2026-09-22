@@ -71,7 +71,7 @@ fun GitSheet(viewModel: SettingsViewModel = hiltViewModel()) {
                 name = g.name,
                 onRevoke = {
                     viewModel.revokeGit()
-                    navigator.openSheet(null)
+                    navigator.closeSheet()
                 },
             )
 

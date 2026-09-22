@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 
 /**
@@ -92,6 +93,9 @@ class TaskWizardViewModel @Inject constructor(
     val git: StateFlow<GitState> = settings.git
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), GitState())
 
+    /** 提交互斥:launch 的 viewModelScope.launch 有挂起点,双击可在同一帧内双双通过 isBlank 校验。 */
+    private val launching = AtomicBoolean(false)
+
     fun update(transform: (TaskDraft) -> TaskDraft) { _draft.update(transform) }
 
     fun prev() { _draft.update { it.copy(step = it.step - 1) } }
@@ -105,7 +109,7 @@ class TaskWizardViewModel @Inject constructor(
             else -> true
         }
         if (ok) _draft.update { it.copy(step = 1) }
-        else navigator.showSnack("仓库地址不完整")
+        else navigator.showSnack(if (d.repoMode == "git") "请先选择一个仓库" else "仓库地址不完整")
     }
 
     /**
@@ -118,6 +122,12 @@ class TaskWizardViewModel @Inject constructor(
             navigator.showSnack("请先描述任务")
             return
         }
+        if (d.desc.length > DESC_MAX) {
+            navigator.showSnack("任务描述不能超过 " + DESC_MAX + " 字")
+            return
+        }
+        // 快速双击守卫:提交中有挂起点,不加锁会创建两个会话
+        if (!launching.compareAndSet(false, true)) return
         val ctxRepo = when (d.repoMode) {
             "manual" -> d.repoUrl.ifBlank { d.repoName }
             "git" -> d.repoName
@@ -125,14 +135,24 @@ class TaskWizardViewModel @Inject constructor(
         }
         val ctxModel = modelList.value.firstOrNull { it.id == d.modelId }?.name ?: d.modelId
         viewModelScope.launch {
-            // 把向导所选模型写回设置,首条对话按此模型真实请求
-            settings.setModelId(d.modelId)
-            val s = sessionRepo.create("新对话")
-            _draft.value = TaskDraft()
-            navigator.openSheet(null)
-            navigator.openSession(s.id)
-            navigator.navigate(AppNavState.ROUTE_CHAT)
-            onLaunched(s.id, d.desc, ctxRepo, ctxModel)
+            try {
+                // 把向导所选模型写回设置,首条对话按此模型真实请求
+                settings.setModelId(d.modelId)
+                val s = sessionRepo.create("新对话")
+                val desc = d.desc
+                _draft.value = TaskDraft()
+                navigator.closeSheet()
+                navigator.openSession(s.id)
+                navigator.navigate(AppNavState.ROUTE_CHAT)
+                onLaunched(s.id, desc, ctxRepo, ctxModel)
+            } finally {
+                launching.set(false)
+            }
         }
+    }
+
+    private companion object {
+        /** 任务描述上限(与 UI 字数计数一致)。 */
+        const val DESC_MAX = 500
     }
 }

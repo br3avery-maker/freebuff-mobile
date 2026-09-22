@@ -88,6 +88,8 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
             onStop = { viewModel.stopStreaming() },
             onTool = { tok -> viewModel.updateInput(viewModel.chatInput.value + tok + " ") },
         )
+        // 切换会话时清空输入框,避免把 A 会话草稿发进 B 会话
+        LaunchedEffect(session?.id) { viewModel.clearInputIfStale() }
     }
 }
 
@@ -289,8 +291,12 @@ private fun Composer(
             Text("停止", color = t.danger, fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.clip(RFull).clickable { onStop() }.padding(horizontal = 12.dp, vertical = 9.dp))
         } else {
-            Text("发送", color = t.accentInk, fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
-                modifier = Modifier.clip(RFull).background(t.accent).clickable { onSend() }
+            val canSend = input.isNotBlank()
+            Text("发送", color = if (canSend) t.accentInk else t.text3,
+                fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.clip(RFull)
+                    .background(if (canSend) t.accent else t.surface3)
+                    .clickable(enabled = canSend) { onSend() }
                     .padding(horizontal = 14.dp, vertical = 9.dp))
         }
     }

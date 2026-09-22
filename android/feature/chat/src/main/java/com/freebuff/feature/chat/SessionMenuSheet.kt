@@ -38,10 +38,10 @@ fun SessionMenuSheet(sessionId: String, viewModel: HomeViewModel = hiltViewModel
         Text("删除会话", color = t.danger, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold,
             modifier = Modifier.fillMaxWidth().clip(RFull).clickable {
                 viewModel.deleteSession(sessionId)
-                navigator.openSheet(null)
+                navigator.closeSheet()
             }.padding(vertical = 11.dp))
         Text("取消", color = t.text3, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.fillMaxWidth().clip(RFull).clickable { navigator.openSheet(null) }
+            modifier = Modifier.fillMaxWidth().clip(RFull).clickable { navigator.closeSheet() }
                 .padding(vertical = 11.dp))
     }
 }

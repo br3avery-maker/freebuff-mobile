@@ -25,6 +25,7 @@ import com.freebuff.core.model.uid
 import com.freebuff.core.ui.navigation.AppNavigator
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -114,7 +115,21 @@ class ChatViewModel @Inject constructor(
 
     private var streamJob: Job? = null
 
+    /** 当前流式回复所属会话;停止时按它收尾,避免会话切换后落到错误会话。 */
+    private var streamSessionId: String? = null
+
     fun updateInput(v: String) { _chatInput.value = v }
+
+    /** 切换会话时丢弃残留草稿:记录上一次输入归属,只有归属变化才清。 */
+    private var inputOwnerSession: String? = null
+
+    fun clearInputIfStale() {
+        val cur = activeSession.value?.id
+        if (cur != inputOwnerSession) {
+            _chatInput.value = ""
+            inputOwnerSession = cur
+        }
+    }
 
     fun modelById(id: String): OfficialModel? = modelList.value.firstOrNull { it.id == id }
 
@@ -145,21 +160,25 @@ class ChatViewModel @Inject constructor(
         // 优先用向导传入的会话 id,避免 activeSession Flow 未更新导致首条消息丢失
         val sessionId = sessionIdHint ?: activeSession.value?.id ?: return
         val target = resolveTarget()
-        _chatInput.value = ""
         val userMsg = ChatMsg(uid(), "user", text = text, time = fmtT(System.currentTimeMillis()),
             ctxRepo = ctxRepo, ctxModel = ctxModel)
         val agentMsg = ChatMsg(uid(), "agent", text = "", time = "正在生成",
             steps = listOf(MsgStep("连接", "连接模型并开始生成…")))
         viewModelScope.launch {
             val session = sessionRepo.get(sessionId) ?: return@launch
+            // 会话确认存在后才清输入框,避免向导提交被会话失效吞字
+            _chatInput.value = ""
+            inputOwnerSession = session.id
             sessionRepo.appendMessages(session.id, listOf(userMsg, agentMsg))
+            autoTitle(session.id, text)
             _streaming.value = true
+            streamSessionId = session.id
             try {
                 if (!target.isConfigured) {
                     updateAgentText(session.id, "⚠ 尚未配置官方网关地址\n\n当前为演示构建,请在 app 模块的 buildConfigField 配置 DEFAULT_GATEWAY_BASE_URL,或改用自定义模型。")
                 } else {
                     val history = buildHistory(session.id, ctxRepo)
-                    streamJob = viewModelScope.launch {
+                    val job = viewModelScope.launch {
                         chatRepo.chatStream(
                             endpoint = target.endpoint,
                             model = target.model,
@@ -171,24 +190,28 @@ class ChatViewModel @Inject constructor(
                             appendAgentText(session.id, chunk)
                         }
                     }
-                    streamJob?.join()
+                    streamJob = job
+                    job.join()
                     finishAgent(session.id)
                 }
             } catch (t: Throwable) {
+                // 用户主动停止已由 stopStreaming 收尾;只有真实失败才写错误文案
+                if (t is CancellationException) throw t
                 failAgent(session.id, t.toApiError().userMessage)
             } finally {
+                if (streamSessionId == session.id) streamSessionId = null
                 _streaming.value = false
             }
         }
     }
 
+    /** 停止当前流式回复:取消请求并把「正在生成」落定;按发起流的那条会话收尾,而非当前激活会话。 */
     fun stopStreaming() {
+        val sid = streamSessionId
         streamJob?.cancel()
         streamJob = null
         viewModelScope.launch {
-            activeSession.value?.let { s ->
-                finishAgent(s.id)
-            }
+            sid?.let { finishAgent(it) }
             _streaming.value = false
         }
     }
@@ -213,6 +236,15 @@ class ChatViewModel @Inject constructor(
         if (ctxRepo.isNotBlank()) history.add("system" to "本次任务关联仓库:$ctxRepo")
         history.addAll(msgs.map { it.role to it.text })
         return history
+    }
+
+    /** 首条用户消息后自动命名会话(取首行前 12 字);仅当仍是默认标题时生效。 */
+    private suspend fun autoTitle(sessionId: String, firstUserText: String) {
+        val s = sessionRepo.get(sessionId) ?: return
+        if (s.title.isNotBlank() && s.title != "新对话") return
+        val line = firstUserText.trim().lines().firstOrNull().orEmpty()
+        if (line.isBlank()) return
+        sessionRepo.updateTitle(sessionId, line.take(12) + if (line.length > 12) "…" else "")
     }
 
     private suspend fun appendAgentText(sessionId: String, chunk: String) {

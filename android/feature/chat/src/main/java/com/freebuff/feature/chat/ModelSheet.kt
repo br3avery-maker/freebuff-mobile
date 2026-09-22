@@ -67,7 +67,7 @@ fun ModelSheet(viewModel: ChatViewModel = hiltViewModel()) {
                     on = m.id == modelId,
                     onClick = {
                         viewModel.setModel(m.id)
-                        navigator.openSheet(null)
+                        navigator.closeSheet()
                     },
                 )
             }
@@ -83,7 +83,7 @@ fun ModelSheet(viewModel: ChatViewModel = hiltViewModel()) {
                         on = m.id == modelId,
                         onClick = {
                             viewModel.setModel(m.id)
-                            navigator.openSheet(null)
+                            navigator.closeSheet()
                         },
                     )
                 }

@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -85,6 +86,12 @@ fun FreebuffRoot(navigator: AppNavigator) {
     }
     val tokens = if (dark) DarkTokens else LightTokens
 
+    // 系统返回键:弹层打开时优先关弹层(含返回目标);聊天页返回回首页
+    BackHandler(enabled = navState.sheet != null) { navigator.closeSheet() }
+    BackHandler(enabled = navState.sheet == null && navState.route == AppNavState.ROUTE_CHAT) {
+        navigator.navigate(AppNavState.ROUTE_HOME)
+    }
+
     CompositionLocalProvider(LocalAppNavigator provides navigator) {
         FreebuffTheme(darkTheme = dark) {
             CompositionLocalProvider(LocalTokens provides tokens) {
@@ -109,14 +116,14 @@ fun FreebuffRoot(navigator: AppNavigator) {
                     SnackbarHost(snackHost, Modifier.align(Alignment.BottomCenter).padding(bottom = 96.dp))
                     navState.sheet?.let { id ->
                         if (id.startsWith("sess-menu:")) {
-                            ModalSheetHost(false, { navigator.openSheet(null) }) {
+                            ModalSheetHost(false, { navigator.closeSheet() }) {
                                 SessionMenuSheet(id.removePrefix("sess-menu:"))
                             }
                         } else {
                             val expand = id == AppNavState.SHEET_TASK ||
                                 id == AppNavState.SHEET_CUSTOM_FORM ||
                                 id.startsWith(AppNavState.SHEET_CUSTOM_FORM + ":")
-                            ModalSheetHost(expand, { navigator.openSheet(null) }) {
+                            ModalSheetHost(expand, { navigator.closeSheet() }) {
                                 when (id) {
                                     AppNavState.SHEET_MODEL -> ModelSheet()
                                     AppNavState.SHEET_TASK -> TaskWizardSheet(

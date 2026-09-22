@@ -92,13 +92,21 @@ private class FState(edit: CustomModel?) {
     var ms by mutableStateOf<Int?>(null)
     var resultList by mutableStateOf<List<String>?>(null)
     var probe by mutableStateOf<Map<String, Probe>>(emptyMap())
+
+    /** 修改会影响请求的关键字段后,测试结果不再可信:失效成功标记与快照网格。 */
+    fun invalidateTest() {
+        if (testPhase == "ok") testPhase = "idle"
+        tested = false
+        resultList = null
+        ms = null
+    }
 }
 
 @Composable
 private fun FormBasic(f: FState) {
     SectionLabel2("基本信息")
     Field("显示名称", f.name) { f.name = it }
-    Field("模型 ID", f.apiId) { f.apiId = it }
+    Field("模型 ID", f.apiId, onFocusedEdit = { f.invalidateTest() }) { f.apiId = it }
 }
 
 @Composable
@@ -137,7 +145,7 @@ private fun SectionLabel2(txt: String) {
 }
 
 @Composable
-private fun Field(label: String, value: String, onValue: (String) -> Unit) {
+private fun Field(label: String, value: String, onFocusedEdit: (() -> Unit)? = null, onValue: (String) -> Unit) {
     val t = LocalTokens.current
     Column(Modifier.fillMaxWidth().clip(R14).background(t.surface2).padding(horizontal = 12.dp, vertical = 4.dp)) {
         Text(label, color = t.text3, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
@@ -155,7 +163,10 @@ private fun FormEndpoint(f: FState) {
     SectionLabel2("端点")
     Column(Modifier.fillMaxWidth().clip(R14).background(t.surface2).padding(horizontal = 12.dp, vertical = 4.dp)) {
         Text("Base URL", color = t.text3, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
-        BasicTextField(value = f.base, onValueChange = { f.base = it },
+        BasicTextField(value = f.base, onValueChange = {
+            f.base = it
+            f.invalidateTest()
+        },
             textStyle = TextStyle(color = t.text, fontSize = 13.sp),
             singleLine = true,
             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp))
@@ -177,7 +188,10 @@ private fun FormEndpoint(f: FState) {
         modifier = Modifier.fillMaxWidth().clip(R14).background(t.surface2).padding(horizontal = 12.dp, vertical = 4.dp)) {
         Column(Modifier.weight(1f)) {
             Text("API Key", color = t.text3, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
-            BasicTextField(value = f.key, onValueChange = { f.key = it },
+            BasicTextField(value = f.key, onValueChange = {
+                f.key = it
+                f.invalidateTest()
+            },
                 textStyle = TextStyle(color = t.text, fontSize = 13.sp),
                 singleLine = true,
                 visualTransformation = if (f.keyVisible) VisualTransformation.None
@@ -231,6 +245,13 @@ private fun FormTest(viewModel: SettingsViewModel, f: FState) {
     SectionLabel2("测试连接")
     f.err?.let {
         Text(it, color = t.danger, fontSize = 11.5.sp, modifier = Modifier.padding(bottom = 8.dp))
+    }
+    // 修改关键字段后旧结果失效:提示重测,避免拿旧快照保存
+    if (f.testPhase != "loading" && !f.tested && f.resultList == null && f.err == null &&
+        f.name.isNotBlank() && f.apiId.isNotBlank() && f.base.isNotBlank()
+    ) {
+        Text("提示:修改端点或密钥后请重新测试连接", color = t.text3, fontSize = 10.5.sp,
+            modifier = Modifier.padding(bottom = 6.dp))
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(if (f.testPhase == "loading") "◐ 正在请求 " + endpointUrl(normEndpoint(f.base)) + " …"
@@ -360,13 +381,13 @@ private fun FormActions(
             Text("删除", color = t.danger, fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.clip(RFull).clickable {
                     viewModel.deleteCustomModel(editing.id)
-                    navigator.openSheet(null)
+                    navigator.closeSheet()
                     navigator.showSnack("已删除 " + editing.name)
                 }.padding(horizontal = 16.dp, vertical = 10.dp))
         }
         Spacer(Modifier.weight(1f))
         Text("取消", color = t.text2, fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
-            modifier = Modifier.clip(RFull).clickable { navigator.openSheet(null) }.padding(horizontal = 18.dp, vertical = 10.dp))
+            modifier = Modifier.clip(RFull).clickable { navigator.closeSheet() }.padding(horizontal = 18.dp, vertical = 10.dp))
         Spacer(Modifier.width(6.dp))
         Text("保存", color = t.accentInk, fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
             modifier = Modifier.clip(RFull).background(t.accent).clickable {
@@ -386,7 +407,7 @@ private fun FormActions(
                         probe = if (f.tested) f.probe else (editing?.probe ?: emptyMap()),
                     )
                     if (editing == null) viewModel.addCustomModel(rec) else viewModel.updateCustomModel(rec)
-                    navigator.openSheet(null)
+                    navigator.closeSheet()
                     navigator.showSnack(if (editing == null) "已添加 " + rec.name else "已保存 " + rec.name)
                 }
             }.padding(horizontal = 24.dp, vertical = 10.dp))

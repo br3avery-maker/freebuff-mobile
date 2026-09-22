@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.StateFlow
 data class AppNavState(
     val route: String = ROUTE_WELCOME,
     val sheet: String? = null,
+    /** 弹层关闭后要返回的弹层(如从任务向导跳去 Git 授权,完成后回到向导)。 */
+    val returnSheet: String? = null,
     val activeSessionId: String? = null,
     val snackMessage: String? = null,
 ) {
@@ -41,7 +43,15 @@ interface AppNavigator {
 
     fun navigate(route: String)
     fun openSession(sessionId: String)
-    fun openSheet(sheet: String?)
+
+    /**
+     * 打开弹层。[returnTo] 指定该弹层关闭后应回到的弹层 id
+     * (如从任务向导打开 Git 授权:openSheet(SHEET_GIT, SHEET_TASK));传 null 清除返回目标。
+     */
+    fun openSheet(sheet: String?, returnTo: String? = null)
+
+    /** 关闭当前弹层;若存在 [AppNavState.returnSheet] 则回到该弹层(一次性)。 */
+    fun closeSheet()
     fun showSnack(message: String)
     fun consumeSnack()
 }

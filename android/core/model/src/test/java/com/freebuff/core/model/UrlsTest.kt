@@ -154,6 +154,83 @@ class UrlsTest {
         assertNull(parseClone("not a url"))
     }
 
+    // ---------- parseClone:ssh:// / 端口 / 私有域名(回归:不要被错误截断) ----------
+    @Test
+    fun `parseClone 解析 ssh 协议地址`() {
+        val c = parseClone("ssh://git@github.com/foo/bar.git")
+        assertNotNull(c)
+        assertEquals("github.com", c!!.host)
+        assertEquals("foo/bar", c.path)
+        assertEquals("ssh", c.scheme)
+        assertEquals("bar", c.repo)
+    }
+
+    @Test
+    fun `parseClone 解析带端口的 https 地址`() {
+        val c = parseClone("https://git.example.com:8443/foo/bar.git")
+        assertNotNull(c)
+        assertEquals("git.example.com:8443", c!!.host)
+        assertEquals("foo/bar", c.path)
+    }
+
+    @Test
+    fun `parseClone 解析 git@host 带端口写法`() {
+        val c = parseClone("git@git.example.com:2222/foo/bar.git")
+        assertNotNull(c)
+        assertEquals("git.example.com:2222", c!!.host)
+        assertEquals("foo/bar", c.path)
+        assertEquals("bar", c.repo)
+    }
+
+    @Test
+    fun `parseClone 解析私有域名与深层路径`() {
+        val c = parseClone("https://git.corp.internal/team/sub/repo")
+        assertNotNull(c)
+        assertEquals("git.corp.internal", c!!.host)
+        assertEquals("team/sub/repo", c.path)
+        assertEquals("repo", c.repo)
+    }
+
+    @Test
+    fun `parseClone 解析 gitee 与 gitlab 深链`() {
+        assertEquals("gitee.com", parseClone("https://gitee.com/foo/bar/tree/dev")!!.host)
+        assertEquals("dev", parseClone("https://gitee.com/foo/bar/tree/dev")!!.branch)
+        assertEquals("gitlab.com", parseClone("git@gitlab.com:group/proj.git")!!.host)
+    }
+
+    // ---------- canonicalRepoUrl ----------
+    @Test
+    fun `canonicalRepoUrl https 保留协议与 git 后缀`() {
+        assertEquals(
+            "https://github.com/foo/bar.git",
+            canonicalRepoUrl("https://github.com/foo/bar.git"),
+        )
+    }
+
+    @Test
+    fun `canonicalRepoUrl scp 风格转 git@ 形式`() {
+        assertEquals(
+            "git@github.com:foo/bar.git",
+            canonicalRepoUrl("git@github.com:foo/bar.git"),
+        )
+    }
+
+    @Test
+    fun `canonicalRepoUrl 带端口的 git@ 转 ssh 协议形式`() {
+        assertEquals(
+            "ssh://git@git.example.com:2222/foo/bar.git",
+            canonicalRepoUrl("git@git.example.com:2222/foo/bar.git"),
+        )
+    }
+
+    @Test
+    fun `canonicalRepoUrl 无协议补 https`() {
+        assertEquals(
+            "https://github.com/foo/bar.git",
+            canonicalRepoUrl("github.com/foo/bar"),
+        )
+    }
+
     // ---------- maskKey ----------
     @Test
     fun `maskKey 脱敏保留前后缀`() {

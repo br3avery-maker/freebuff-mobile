@@ -54,6 +54,8 @@ android/
 
 完整接口/错误分类/回退策略见 **[docs/backend-integration.md](docs/backend-integration.md)**。
 
+后端 agent 运行时的行为参考(工具注册表、工具调用执行管线、agent 双层循环、事件流契约)见 **[docs/agent-architecture.md](docs/agent-architecture.md)**——对接完整 agent 会话流时,事件类型与渲染语义以此为准。
+
 配置项在 `app/build.gradle.kts` 的 `buildConfigField`(留空即走回退路径,不影响编译与体验):
 
 | 配置 | 作用 | 留空行为 |
