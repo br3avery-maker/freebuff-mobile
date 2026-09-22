@@ -7,7 +7,7 @@ name: Android Release
 #   2. 等 Android CI 全绿
 #   3. git tag -a v0.X.Y -m "..." && git push origin v0.X.Y
 #
-# 工作流会校验「标签 = versionName」,不匹配直接失败 —— 防止发出版本号对不上的包。
+# 工作流会校验「标签 = versionName」(预发布后缀 -rcN/-betaN 容忍),不匹配直接失败 —— 防止发出版本号对不上的包。
 # Release 说明自动取上一个标签到本标签之间的提交标题,发完后可在 Releases 页面编辑润色。
 
 on:
@@ -49,9 +49,11 @@ jobs:
       - name: Verify tag matches versionName
         run: |
           TAG="${GITHUB_REF_NAME#v}"
+          # 预发布标签(v0.X.Y-rc1/-beta2)取主版本部分比对,versionName 不携带后缀
+          TAG_BASE="${TAG%%-*}"
           VER=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
-          echo "tag=$TAG versionName=$VER"
-          if [ "$TAG" != "$VER" ]; then
+          echo "tag=$TAG base=$TAG_BASE versionName=$VER"
+          if [ "$TAG_BASE" != "$VER" ]; then
             echo "::error::标签 v$TAG 与 versionName $VER 不一致 —— 请先提交版本号提升再打标签"
             exit 1
           fi
