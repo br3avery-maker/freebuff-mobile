@@ -81,33 +81,15 @@ fun buildChatRequest(
 }
 
 /**
- * 解析一行 SSE 文本。
+ * 提取一行 SSE 文本的 data 载荷(原始 JSON 字符串,不做内容解析)。
  * - 非 "data:" 前缀行返回 null(如注释/空行)
  * - "data: [DONE]" 返回 null(流结束)
- * - OpenAI 兼容增量取 choices[0].delta.content;兼容取 choices[0].text / message.content
- * - 未知结构返回空串(不影响流)
+ * - 载荷本体交给 [AgentEventParser] 做结构化解析(文本/工具/事件帧)
  */
 fun parseSseData(line: String): String? {
     if (!line.startsWith("data:")) return null
     val data = line.removePrefix("data:").trim()
-    if (data.isEmpty() || data == "[DONE]") return null
-    val obj = try {
-        JSONObject(data)
-    } catch (e: Exception) {
-        return null
-    }
-    val choices = obj.optJSONArray("choices") ?: return ""
-    val c = choices.optJSONObject(0) ?: return ""
-    val delta = c.optJSONObject("delta")
-    if (delta != null && delta.has("content") && !delta.isNull("content")) {
-        return delta.optString("content")
-    }
-    if (c.has("text") && !c.isNull("text")) return c.optString("text")
-    if (c.has("message")) {
-        val m = c.optJSONObject("message")
-        if (m != null && m.has("content") && !m.isNull("content")) return m.optString("content")
-    }
-    return ""
+    return if (data.isEmpty() || data == "[DONE]") null else data
 }
 
 /**

@@ -1,11 +1,14 @@
 package com.freebuff.core.data.repository
 
 import com.freebuff.core.data.network.ApiError
+import com.freebuff.core.data.network.AgentEventParser
 import com.freebuff.core.data.network.buildChatRequest
 import com.freebuff.core.data.network.parseSseData
+import com.freebuff.core.model.AgentEvent
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.launch
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.Response
@@ -14,8 +17,13 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * 真实对话流式接入:POST OpenAI 兼容端点(stream=true),按 SSE 行增量解析
- * choices[0].delta.content 并逐个发射文本片段。
+ * 真实对话流式接入:POST OpenAI 兼容端点(stream=true),按 SSE 行增量解析。
+ *
+ * 发射 [AgentEvent] 事件流(与 agent-architecture.md §4 契约对应):
+ * - 文本增量(choices[0].delta.content)
+ * - 工具调用/结果(delta.tool_calls 参数累积,finish_reason=tool_calls 时落卡)
+ * - Freebuff 原生事件帧(type=tool_call/tool_result/error/subagent-* / end_turn)
+ * 事件按到达顺序发射;解析失败/未知结构静默跳过,不影响流。
  */
 @Singleton
 class ChatRepository @Inject constructor() {
@@ -28,7 +36,7 @@ class ChatRepository @Inject constructor() {
      * @param headers 附加请求头(JSON 解析后的键值)
      * @param skipTLS 是否跳过 TLS 校验
      * @param history 历史消息 (role, content)
-     * @return 增量文本片段;HTTP/网络失败时抛出异常
+     * @return 事件流,按到达顺序;HTTP/网络失败时抛出异常
      */
     fun chatStream(
         endpoint: String,
@@ -37,7 +45,7 @@ class ChatRepository @Inject constructor() {
         headers: Map<String, String>,
         skipTLS: Boolean,
         history: List<Pair<String, String>>,
-    ): Flow<String> = callbackFlow {
+    ): Flow<AgentEvent> = callbackFlow {
         val (request, client) = buildChatRequest(
             endpoint = endpoint,
             model = model,
@@ -47,6 +55,7 @@ class ChatRepository @Inject constructor() {
             stream = true,
             skipTLS = skipTLS,
         )
+        val parser = AgentEventParser()
         val call = client.newCall(request)
         call.enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
@@ -64,9 +73,13 @@ class ChatRepository @Inject constructor() {
                         while (true) {
                             val line = source.readUtf8Line() ?: break
                             if (line.isBlank()) continue
-                            parseSseData(line)?.let { trySend(it) }
+                            val data = parseSseData(line) ?: continue
+                            parser.feed(data).forEach { trySend(it) }
                         }
                     }
+                    // 流正常结束:把参数累积未落定的工具调用 flush 出来
+                    // (部分端点不发 finish_reason=tool_calls)
+                    parser.flush().forEach { trySend(it) }
                     close()
                 } catch (t: Throwable) {
                     close(t)

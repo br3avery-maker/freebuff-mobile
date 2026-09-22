@@ -1,5 +1,11 @@
 package com.freebuff.feature.chat
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -22,6 +28,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -32,6 +40,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.freebuff.core.model.ChatMsg
+import com.freebuff.core.model.ToolCard
+import com.freebuff.core.model.toolDisplayName
+import com.freebuff.core.model.toolGlyph
 import com.freebuff.core.ui.MiniMarkdown
 import com.freebuff.core.ui.R14
 import com.freebuff.core.ui.RFull
@@ -205,6 +216,11 @@ private fun AgentBody(m: ChatMsg, isStreaming: Boolean, onCopy: (String) -> Unit
                 }
             }
         }
+        // 工具卡片时间线(agent-architecture.md §4:按到达顺序渲染,无需排序)
+        if (m.tools.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            ToolCards(m.tools)
+        }
         if (m.text.isNotBlank()) {
             // 真实流式回复写入 text;历史演示消息走 md/code/md2 结构化渲染
             Spacer(Modifier.height(8.dp))
@@ -244,6 +260,105 @@ private fun AgentBody(m: ChatMsg, isStreaming: Boolean, onCopy: (String) -> Unit
             }
         }
     }
+}
+
+/** 工具卡片列表:垂直时间线,左侧连线。 */
+@Composable
+private fun ToolCards(cards: List<ToolCard>) {
+    Column {
+        cards.forEachIndexed { i, card ->
+            ToolCardItem(card, last = i == cards.lastIndex)
+            if (i != cards.lastIndex) Spacer(Modifier.height(6.dp))
+        }
+    }
+}
+
+/** 单张工具卡片:状态点 + 展示名 + 输入摘要;点击展开输入/输出详情;运行中带呼吸动画。 */
+@Composable
+private fun ToolCardItem(card: ToolCard, last: Boolean) {
+    val t = LocalTokens.current
+    val expanded = remember(card.callId) { mutableStateOf(false) }
+    val stateColor = when {
+        card.isRunning -> t.accent
+        card.isError -> t.danger
+        else -> t.ok
+    }
+    val subagent = card.subagentName
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(t.surface2)
+            .clickable { expanded.value = !expanded.value }.padding(horizontal = 10.dp, vertical = 8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (card.isRunning) {
+                val alpha = rememberInfiniteAlpha()
+                Box(
+                    Modifier.size(7.dp).clip(RFull).background(stateColor.copy(alpha = 0.35f + 0.65f * alpha)),
+                )
+            } else {
+                Text(if (card.isError) "⚠" else "✓", color = stateColor, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.width(7.dp))
+            if (subagent != null) {
+                Text("✷ ", color = t.accent, fontSize = 11.5.sp)
+                Text("子代理 · ", color = t.text2, fontSize = 11.5.sp)
+                Text(subagent, color = t.text, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+            } else {
+                Text(toolGlyph(card.tool) + " ", color = t.accent, fontSize = 11.sp)
+                Text(toolDisplayName(card.tool), color = t.text, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+            }
+            Spacer(Modifier.weight(1f))
+            Text(
+                when {
+                    card.isRunning -> "运行中"
+                    card.isError -> "失败"
+                    else -> "完成"
+                },
+                color = stateColor, fontSize = 10.sp, fontWeight = FontWeight.Medium,
+            )
+            Text(if (expanded.value) " ⌃" else " ⌄", color = t.text3, fontSize = 10.sp)
+        }
+        // 摘要行:输入摘要(路径/命令/搜索词);子代理显示实时输出尾部
+        val summary = if (subagent != null && card.isRunning) {
+            card.input.lines().lastOrNull { it.isNotBlank() }?.take(80).orEmpty().ifBlank { "启动中…" }
+        } else card.input.take(80)
+        if (summary.isNotBlank()) {
+            Spacer(Modifier.height(4.dp))
+            Text(summary, color = t.text3, fontSize = 10.5.sp, maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        }
+        // 展开区:完整输入/输出
+        if (expanded.value) {
+            Spacer(Modifier.height(8.dp))
+            DetailLine("输入", card.input.ifBlank { "(无参数)" })
+            if (card.output.isNotBlank()) {
+                Spacer(Modifier.height(6.dp))
+                DetailLine("输出", card.output)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DetailLine(label: String, value: String) {
+    val t = LocalTokens.current
+    Row {
+        Text(label, color = t.text3, fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.width(8.dp))
+        Text(value, color = t.text2, fontSize = 10.5.sp, lineHeight = 15.sp)
+    }
+}
+
+/** 0..1 往返的呼吸透明度(卡片运行态指示)。 */
+@Composable
+private fun rememberInfiniteAlpha(): Float {
+    return rememberInfiniteTransition().animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(850, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+    ).value
 }
 
 @Composable

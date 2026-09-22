@@ -1,6 +1,7 @@
 package com.freebuff.core.data.repository
 
 import com.freebuff.core.data.network.ApiError
+import com.freebuff.core.model.AgentEvent
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
@@ -47,7 +48,8 @@ class ChatRepositoryTest {
                     "data: [DONE]\n\n",
             ),
         )
-        assertEquals(listOf("你", "好"), stream().toList())
+        val texts = stream().toList().filterIsInstance<AgentEvent.Text>().map { it.chunk }
+        assertEquals(listOf("你", "好"), texts)
     }
 
     @Test
@@ -84,7 +86,8 @@ class ChatRepositoryTest {
             ),
         )
         // 兼容结构 choices[0].text
-        assertEquals(listOf("兼容"), stream().toList())
+        val texts = stream().toList().filterIsInstance<AgentEvent.Text>().map { it.chunk }
+        assertEquals(listOf("兼容"), texts)
     }
 
     @Test

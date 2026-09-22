@@ -10,6 +10,7 @@ import com.freebuff.core.model.CustomModel
 import com.freebuff.core.model.MsgStep
 import com.freebuff.core.model.Probe
 import com.freebuff.core.model.Session
+import com.freebuff.core.model.ToolCard
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -23,7 +24,7 @@ data class SessionEntity(
     val sort: Long,
 )
 
-/** 消息表。sort 为会话内顺序;steps/文本字段用 JSON 文本存储。 */
+/** 消息表。sort 为会话内顺序;steps/tools 等结构化字段用 JSON 文本存储。 */
 @Entity(tableName = "messages")
 data class MessageEntity(
     @PrimaryKey val id: String,
@@ -39,6 +40,7 @@ data class MessageEntity(
     val md2: String,
     val ctxRepo: String,
     val ctxModel: String,
+    val toolsJson: String,
 )
 
 /** 自定义模型表。key 为加密后的密文,models/probe 为 JSON 文本。 */
@@ -86,6 +88,7 @@ fun MessageEntity.toDomain(): ChatMsg = ChatMsg(
     steps = JsonCodec.stepsFromJson(stepsJson),
     md = md, codeLang = codeLang, code = code, md2 = md2,
     ctxRepo = ctxRepo, ctxModel = ctxModel,
+    tools = JsonCodec.toolCardsFromJson(toolsJson),
 )
 
 fun ChatMsg.toEntity(sessionId: String, sort: Long): MessageEntity = MessageEntity(
@@ -93,6 +96,7 @@ fun ChatMsg.toEntity(sessionId: String, sort: Long): MessageEntity = MessageEnti
     stepsJson = JsonCodec.stepsToJson(steps),
     md = md, codeLang = codeLang, code = code, md2 = md2,
     ctxRepo = ctxRepo, ctxModel = ctxModel,
+    toolsJson = JsonCodec.toolCardsToJson(tools),
 )
 
 fun CustomModelEntity.toDomain(): CustomModel = CustomModel(
@@ -162,6 +166,40 @@ object JsonCodec {
             (0 until arr.length()).mapNotNull { i ->
                 val o = arr.optJSONObject(i) ?: return@mapNotNull null
                 MsgStep(o.optString("name"), o.optString("sub"))
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    fun toolCardsToJson(cards: List<ToolCard>): String {
+        val arr = JSONArray()
+        cards.forEach { c ->
+            arr.put(
+                JSONObject()
+                    .put("callId", c.callId)
+                    .put("tool", c.tool)
+                    .put("input", c.input)
+                    .put("output", c.output)
+                    .put("state", c.state),
+            )
+        }
+        return arr.toString()
+    }
+
+    fun toolCardsFromJson(s: String): List<ToolCard> {
+        if (s.isBlank()) return emptyList()
+        return try {
+            val arr = JSONArray(s)
+            (0 until arr.length()).mapNotNull { i ->
+                val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                ToolCard(
+                    callId = o.optString("callId"),
+                    tool = o.optString("tool"),
+                    input = o.optString("input"),
+                    output = o.optString("output"),
+                    state = o.optString("state", "done"),
+                )
             }
         } catch (e: Exception) {
             emptyList()

@@ -1,0 +1,100 @@
+package com.freebuff.core.model
+
+/* ---------------- Agent 事件流(与 agent-architecture.md §4 契约对应) ---------------- */
+
+/**
+ * 后端会话事件的 App 端表示。按到达顺序处理即可——工具串行执行保证
+ * tool_call / tool_result 成对有序,无需排序或合并。
+ */
+sealed interface AgentEvent {
+    /** 文本增量:追加渲染当前助手消息(Markdown)。 */
+    data class Text(val chunk: String) : AgentEvent
+
+    /**
+     * 工具调用开始或更新。OpenAI 兼容流的 arguments 增量会按 callId 多次到达,
+     * App 端按 callId upsert 卡片,以最后一次到达的 input 为准。
+     */
+    data class ToolCall(val callId: String, val tool: String, val input: String) : AgentEvent
+
+    /** 工具收尾。isError=true 时卡片标红,output 为归因信息。 */
+    data class ToolResult(val callId: String, val output: String, val isError: Boolean = false) : AgentEvent
+
+    /** 后端 error 事件(参数校验/权限/分类错误已自带归因语境),原样展示。 */
+    data class Failure(val message: String) : AgentEvent
+
+    /** 子代理流式输出(如 context-pruner / thinker 的后台过程)。 */
+    data class SubagentChunk(val agent: String, val chunk: String) : AgentEvent
+
+    /** 回合结束:消息落定;suggest_followups 卡片在此之后渲染。 */
+    object EndTurn : AgentEvent
+}
+
+/** 消息内嵌的工具卡片(随消息持久化)。state: running | done | error。 */
+data class ToolCard(
+    val callId: String,
+    val tool: String,
+    val input: String = "",
+    val output: String = "",
+    val state: String = "running",
+) {
+    val isRunning: Boolean get() = state == "running"
+    val isError: Boolean get() = state == "error"
+    /** 子代理卡片:tool 以 subagent: 前缀携带代理名。 */
+    val subagentName: String? get() = if (tool.startsWith(SUBAGENT_PREFIX)) tool.removePrefix(SUBAGENT_PREFIX) else null
+
+    companion object {
+        const val SUBAGENT_PREFIX = "subagent:"
+    }
+}
+
+/** 常见工具的展示名(与 agent-architecture.md §1 工具注册表对应);未收录显示原名。 */
+private val TOOL_LABELS: Map<String, String> = mapOf(
+    "read_files" to "读取文件",
+    "read_subtree" to "读取目录树",
+    "list_directory" to "列目录",
+    "glob" to "文件匹配",
+    "find_files" to "查找文件",
+    "code_search" to "搜索代码",
+    "read_docs" to "读取文档",
+    "read_url" to "读取网页",
+    "write_file" to "写入文件",
+    "str_replace" to "编辑文件",
+    "apply_patch" to "应用补丁",
+    "propose_write_file" to "提议写入",
+    "propose_str_replace" to "提议编辑",
+    "run_terminal_command" to "运行命令",
+    "run_file_change_hooks" to "触发变更钩子",
+    "write_todos" to "更新任务清单",
+    "add_subgoal" to "新增子目标",
+    "update_subgoal" to "更新子目标",
+    "create_plan" to "制定计划",
+    "think_deeply" to "深入思考",
+    "spawn_agents" to "派发子代理",
+    "spawn_agent_inline" to "后台代理",
+    "lookup_agent_info" to "查询代理信息",
+    "task_completed" to "任务完成",
+    "end_turn" to "结束回合",
+    "ask_user" to "等待输入",
+    "suggest_followups" to "推荐后续",
+    "set_output" to "设置输出",
+    "web_search" to "联网搜索",
+    "browser_logs" to "浏览器日志",
+    "skill" to "调用技能",
+    "gravity_index" to "代码索引",
+)
+
+fun toolDisplayName(tool: String): String = TOOL_LABELS[tool] ?: tool
+
+/** 工具图标:按类别取字形,未识别用通用齿轮。 */
+fun toolGlyph(tool: String): String = when (tool) {
+    "read_files", "read_subtree", "list_directory", "glob", "find_files", "read_docs" -> "▤"
+    "code_search", "web_search", "gravity_index" -> "⌕"
+    "read_url" -> "⌘"
+    "write_file", "str_replace", "apply_patch", "propose_write_file", "propose_str_replace" -> "✎"
+    "run_terminal_command", "run_file_change_hooks" -> "›_"
+    "spawn_agents", "spawn_agent_inline" -> "✷"
+    "write_todos", "add_subgoal", "update_subgoal", "create_plan", "think_deeply" -> "☰"
+    "ask_user", "suggest_followups" -> "?"
+    "end_turn", "task_completed" -> "✓"
+    else -> "⚙"
+}

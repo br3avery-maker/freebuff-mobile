@@ -13,12 +13,14 @@ import com.freebuff.core.data.repository.CustomModelRepository
 import com.freebuff.core.data.repository.ModelCatalogRepository
 import com.freebuff.core.data.repository.SessionRepository
 import com.freebuff.core.data.repository.SettingsRepository
+import com.freebuff.core.model.AgentEvent
 import com.freebuff.core.model.ChatMsg
 import com.freebuff.core.model.ChatTarget
 import com.freebuff.core.model.CustomModel
 import com.freebuff.core.model.MsgStep
 import com.freebuff.core.model.OfficialModel
 import com.freebuff.core.model.Session
+import com.freebuff.core.model.ToolCard
 import com.freebuff.core.model.fmtT
 import com.freebuff.core.model.mergedModelList
 import com.freebuff.core.model.uid
@@ -186,9 +188,7 @@ class ChatViewModel @Inject constructor(
                             headers = target.headers,
                             skipTLS = target.skipTLS,
                             history = history,
-                        ).collect { chunk ->
-                            appendAgentText(session.id, chunk)
-                        }
+                        ).collect { ev -> handleAgentEvent(session.id, ev) }
                     }
                     streamJob = job
                     job.join()
@@ -217,6 +217,48 @@ class ChatViewModel @Inject constructor(
     }
 
     /* ---------------- 内部实现 ---------------- */
+
+    /**
+     * 事件分派(agent-architecture.md §4):文本追加、工具卡片 upsert、错误归因。
+     * 事件按到达顺序处理;工具串行执行保证 callId 成对有序,无需排序。
+     */
+    private suspend fun handleAgentEvent(sessionId: String, ev: AgentEvent) {
+        when (ev) {
+            is AgentEvent.Text -> appendAgentText(sessionId, ev.chunk)
+            is AgentEvent.ToolCall -> upsertToolCard(sessionId, ev.callId, ev.tool, ev.input)
+            is AgentEvent.ToolResult -> completeToolCard(sessionId, ev.callId, ev.output, ev.isError)
+            is AgentEvent.Failure -> appendAgentText(sessionId, "\n⚠ " + ev.message)
+            is AgentEvent.SubagentChunk -> upsertToolCard(
+                sessionId, "subagent-" + ev.agent,
+                ToolCard.SUBAGENT_PREFIX + ev.agent,
+                ev.chunk,
+            )
+            AgentEvent.EndTurn -> Unit // 收尾由 finishAgent 统一处理
+        }
+    }
+
+    /** 按呼叫 upsert 工具卡片:同名 callId 更新(OpenAI 参数增量多次到达),否则追加。 */
+    private suspend fun upsertToolCard(sessionId: String, callId: String, tool: String, input: String) {
+        val s = sessionRepo.get(sessionId) ?: return
+        val last = s.messages.lastOrNull { it.role == "agent" } ?: return
+        val cards = last.tools.toMutableList()
+        val idx = cards.indexOfFirst { it.callId == callId }
+        if (idx >= 0) cards[idx] = cards[idx].copy(tool = tool, input = input, state = "running")
+        else cards += ToolCard(callId = callId, tool = tool, input = input, state = "running")
+        sessionRepo.replaceMessage(sessionId, last.id, last.copy(tools = cards))
+    }
+
+    /** 工具收尾:写入输出与终态;无对应卡片时补一张(容错乱序)。 */
+    private suspend fun completeToolCard(sessionId: String, callId: String, output: String, isError: Boolean) {
+        val s = sessionRepo.get(sessionId) ?: return
+        val last = s.messages.lastOrNull { it.role == "agent" } ?: return
+        val cards = last.tools.toMutableList()
+        val idx = cards.indexOfFirst { it.callId == callId }
+        val updated = (cards.getOrNull(idx) ?: ToolCard(callId = callId, tool = "tool"))
+            .copy(output = output, state = if (isError) "error" else "done")
+        if (idx >= 0) cards[idx] = updated else cards += updated
+        sessionRepo.replaceMessage(sessionId, last.id, last.copy(tools = cards))
+    }
 
     /** 解析当前模型对应的请求目标(自定义模型读其端点,官方模型走网关)。 */
     private fun resolveTarget(): ChatTarget {
@@ -262,7 +304,11 @@ class ChatViewModel @Inject constructor(
     private suspend fun finishAgent(sessionId: String) {
         val s = sessionRepo.get(sessionId) ?: return
         val last = s.messages.lastOrNull { it.role == "agent" } ?: return
-        sessionRepo.replaceMessage(sessionId, last.id, last.copy(time = fmtT(System.currentTimeMillis())))
+        // 流结束时仍在 running 的卡片 = 未等到 tool_result(流提前结束/用户停止),标记未完成
+        val cards = if (last.tools.any { it.isRunning }) {
+            last.tools.map { if (it.isRunning) it.copy(state = "error", output = "(未完成)") else it }
+        } else last.tools
+        sessionRepo.replaceMessage(sessionId, last.id, last.copy(text = last.text, tools = cards, time = fmtT(System.currentTimeMillis())))
     }
 
     private suspend fun failAgent(sessionId: String, reason: String) {

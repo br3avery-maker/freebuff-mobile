@@ -50,7 +50,7 @@ data class OfficialModel(
 /** 对话消息中 agent 的阶段性步骤(如"规划"/"执行")。 */
 data class MsgStep(val name: String, val sub: String)
 
-/** 单条对话消息。role: user | agent。 */
+/** 单条对话消息。role: user | agent。tools 为消息内嵌的工具卡片(agent 消息专用)。 */
 data class ChatMsg(
     val id: String,
     val role: String,
@@ -63,6 +63,7 @@ data class ChatMsg(
     val md2: String = "",
     val ctxRepo: String = "",
     val ctxModel: String = "",
+    val tools: List<ToolCard> = emptyList(),
 )
 
 /** 会话。messages 为会话内消息(内存中完整持有,持久化见 core:data Room)。 */
@@ -99,7 +100,7 @@ data class RepairReport(
 )
 
 /** 版本检查:小于当前版本号视为有更新。 */
-const val LATEST_VERSION = "0.2.0"
+const val LATEST_VERSION = "0.2.1"
 
 /** 一次对话的完整请求目标(由模型解析而来,官方/自定义统一)。 */
 data class ChatTarget(
