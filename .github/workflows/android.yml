@@ -41,8 +41,11 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      # runner 预装的 SDK 已含 platform-tools 与全部 licenses;老版参数请求的 legacy
+      # "tools" 包已被 Google 下架(2026-09 起报 "Failed to find package 'tools'"),
+      # 现在只需接受许可证 —— 真正缺的构建工具由 Gradle/AGP 自行下载。
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
       - name: Set up Gradle (dependency cache)
         uses: gradle/actions/setup-gradle@v4
