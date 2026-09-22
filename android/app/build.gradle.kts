@@ -32,8 +32,8 @@ android {
         applicationId = "com.freebuff.mobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.2.1"
+        versionCode = 4
+        versionName = "0.2.2"
 
         // 真实接入配置：发布时替换为生产值。
         // - DEFAULT_GATEWAY_BASE_URL: 官方模型网关根地址(留空 = 未配置, UI 明确提示)

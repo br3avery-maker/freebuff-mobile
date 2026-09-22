@@ -93,8 +93,8 @@ scripts/gradle.sh :app:assembleRelease --console=plain > rel-log.txt 2>&1
 
 ```bash
 mkdir -p dist
-cp app/build/outputs/apk/debug/app-debug.apk   dist/FreebuffMobile-0.2.1-debug.apk
-cp app/build/outputs/apk/release/app-release.apk dist/FreebuffMobile-0.2.1-release.apk
+cp app/build/outputs/apk/debug/app-debug.apk   dist/FreebuffMobile-0.2.2-debug.apk
+cp app/build/outputs/apk/release/app-release.apk dist/FreebuffMobile-0.2.2-release.apk
 ```
 
 `dist/` 中的文件名带版本号 —— 发布新版本时记得跟着 `versionName` 一起改。
@@ -157,14 +157,14 @@ scripts/gradle.sh :app:signingReport
 
 ```bash
 # 安装到已连接的设备/模拟器
-.toolchain/sdk/platform-tools/adb.exe install -r dist/FreebuffMobile-0.2.1-release.apk
+.toolchain/sdk/platform-tools/adb.exe install -r dist/FreebuffMobile-0.2.2-release.apk
 
 # 校验签名与包信息
 .toolchain/sdk/build-tools/35.0.0/apksigner.bat verify -v app/build/outputs/apk/release/app-release.apk
 .toolchain/sdk/build-tools/35.0.0/aapt2.exe dump badging app/build/outputs/apk/release/app-release.apk
 ```
 
-预期包信息:`package name='com.freebuff.mobile' versionCode='3' versionName='0.2.1'`,minSdk 26 / targetSdk 35。
+预期包信息:`package name='com.freebuff.mobile' versionCode='4' versionName='0.2.2'`,minSdk 26 / targetSdk 35。
 
 ## 6. R8 混淆注意事项
 
