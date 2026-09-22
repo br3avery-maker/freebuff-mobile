@@ -1,6 +1,29 @@
 # 构建与打包 APK
 
-本文档记录 Freebuff Mobile(Android 原生工程)的构建、打包、签名与安装流程。所有命令均在本机验证通过。
+本文档记录 Freebuff Mobile(Android 原生工程)的构建、打包、签名、安装与**发版**流程。所有命令均在本机验证通过。
+
+## 0. 发版流程(自动化,推荐)
+
+推送 `v*` 标签即自动发版:[`.github/workflows/release.yml`](../.github/workflows/release.yml) 会跑单测、构建 release APK、校验「标签 = versionName」、创建 GitHub Release 并附上按版本命名的 APK。
+
+```bash
+# 1. 版本号提升(三处同步)并提交推送:
+#    android/app/build.gradle.kts  versionCode / versionName
+#    android/core/model/.../Models.kt  LATEST_VERSION(应用内「检查更新」的基准)
+git push origin main
+# 2. 等 Android CI 全绿
+gh run watch   # 或看 Actions 页面
+# 3. 打标签推送 → 发版自动完成
+git tag -a v0.X.Y -m "v0.X.Y: 一句话说明" && git push origin v0.X.Y
+```
+
+说明:
+
+- **版本一致性硬校验**:标签 `v0.X.Y` 与 `versionName` 不一致时工作流直接失败,不会发出版本号对不上的包。所以先推版本号提升、再打标签。
+- **Release 说明自动生成**:取上一个标签到本标签之间的提交标题(`- 标题 (短哈希)` 逐条列出);首个标签没有可比对的上一个标签时写「首个自动发版」。发布后可在 Releases 页面编辑润色。
+- **产物命名**:`FreebuffMobile-<版本>-release.apk`(与第 3 节的 `dist/` 约定一致)。
+- **重复标签保护**:同一标签推送两次,第二次在创建 Release 时报「已存在」而失败,属预期保护;要重发需先删标签与 Release。
+- 该工作流不跑 lint(与 CI 分工:CI 管 PR/分支质量门禁,Release 管出包),签名规则见第 4 节 —— 未配置 `keystore.properties`(CI 上即 Secrets 未注入)时出 debug 证书签名的包。
 
 ## 1. 工具链
 
