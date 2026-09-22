@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- 聊天/目录拉取/Git 授权/版本检查全部依赖网络 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:name="com.freebuff.app.FreebuffApplication"
         android:allowBackup="true"

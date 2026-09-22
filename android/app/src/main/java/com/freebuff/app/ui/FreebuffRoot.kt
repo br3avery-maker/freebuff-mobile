@@ -13,8 +13,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.SnackbarHost
@@ -26,14 +29,17 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.freebuff.app.CrashReporter
 import com.freebuff.app.RootViewModel
 import com.freebuff.core.ui.navigation.AppNavState
 import com.freebuff.core.ui.navigation.AppNavigator
@@ -70,6 +76,25 @@ fun FreebuffRoot(navigator: AppNavigator) {
     val navState by navigator.state.collectAsState()
     val themeMode by settingsVm.themeMode.collectAsState()
     val repairReport by rootVm.repairReport.collectAsState()
+
+    // 上次异常退出的黑匣子回看:欢迎页横幅 + 可复制堆栈(诊断启动崩溃用)
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val crashBanner = remember { mutableStateOf(CrashReporter.hasCrash(context)) }
+    if (crashBanner.value) {
+        CrashBanner(
+            onCopy = {
+                CrashReporter.readLast(context)?.let { text ->
+                    CrashReporter.copyToClipboard(context, text)
+                    navigator.showSnack("崩溃堆栈已复制,可粘贴发给开发者")
+                }
+                CrashReporter.clear(context)
+            },
+            onDismiss = {
+                CrashReporter.clear(context)
+                crashBanner.value = false
+            },
+        )
+    }
 
     // 一次性迁移:把清洗修复报告注入设置页,供「恢复原始记录」
     LaunchedEffect(repairReport) {
@@ -196,6 +221,42 @@ private fun BottomBar(navigator: AppNavigator, modifier: Modifier = Modifier) {
         TabItem("设置", navState.route == AppNavState.ROUTE_SETTINGS, navState.route != AppNavState.ROUTE_SETTINGS) {
             navigator.navigate(AppNavState.ROUTE_SETTINGS)
         }
+    }
+}
+
+/**
+ * 上次异常退出横幅(顶部覆盖层,颜色自持不依赖主题——崩溃场景下主题可能未就绪)。
+ * 「复制堆栈」把黑匣子全文交给剪贴板;两个动作都会清掉记录,横幅只在下次崩溃后再现。
+ */
+@Composable
+private fun CrashBanner(onCopy: () -> Unit, onDismiss: () -> Unit) {
+    val bg = Color(0xFEEE4444)
+    Column(
+        Modifier.fillMaxWidth().background(bg).padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("⚠", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "上次异常退出——可复制崩溃信息帮助定位",
+                color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                "忽略 ×",
+                color = Color.White.copy(alpha = 0.75f), fontSize = 12.sp,
+                modifier = Modifier.clip(RoundedCornerShape(8.dp))
+                    .clickable { onDismiss() }.padding(horizontal = 8.dp, vertical = 4.dp),
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "复制堆栈",
+            color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+            modifier = Modifier.clip(RoundedCornerShape(8.dp))
+                .background(Color.White.copy(alpha = 0.18f))
+                .clickable { onCopy() }.padding(horizontal = 12.dp, vertical = 6.dp),
+        )
     }
 }
 
