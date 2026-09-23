@@ -88,7 +88,7 @@ class SettingsRepository @Inject constructor(
     val themeMode = getStringFlow(KEY_THEME_MODE, "dark")
     val modelId = getStringFlow(KEY_MODEL_ID, "deepseek-v4-flash")
     val repoParse = getStringFlow(KEY_REPO_PARSE, "strict")
-    val version = getStringFlow(KEY_VERSION, "0.1.0")
+    val version = getStringFlow(KEY_VERSION, LATEST_VERSION)
     val signedIn = getStringFlow(KEY_SIGNED_IN, "false").map { it.toBoolean() }
 
     suspend fun setThemeMode(mode: String) = setString(KEY_THEME_MODE, mode)

@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.freebuff.core.model.FEEDBACK_URL
+import com.freebuff.core.model.LATEST_VERSION
 import com.freebuff.core.model.OFFICIAL_SITE
 import com.freebuff.core.ui.RowCard
 import com.freebuff.core.ui.SectionLabel
@@ -39,7 +40,6 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val git by viewModel.git.collectAsState()
     val repoParse by viewModel.repoParse.collectAsState()
     val customModels by viewModel.customModels.collectAsState()
-    val version by viewModel.version.collectAsState()
     val sessionCount by viewModel.sessionCount.collectAsState()
     val clearArmed by viewModel.clearArmed.collectAsState()
 
@@ -134,7 +134,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                     icon = "↻",
                     title = "版本",
                     sub = "点击检查最新版本",
-                    trailing = "v" + version,
+                    trailing = "v" + LATEST_VERSION,
                     onClick = { navigator.openSheet(AppNavState.SHEET_UPDATE) },
                 )
                 SetRow(
@@ -155,7 +155,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             Spacer(Modifier.height(22.dp))
             Column(Modifier.align(Alignment.CenterHorizontally)) {
                 Text("Freebuff Mobile", color = t.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                Text("v" + version, color = t.text3, fontSize = 11.5.sp,
+                Text("v" + LATEST_VERSION, color = t.text3, fontSize = 11.5.sp,
                     modifier = Modifier.padding(top = 3.dp))
                 Text("Made for the Freebuff open-source project", color = t.text3, fontSize = 11.sp,
                     modifier = Modifier.padding(top = 8.dp))
