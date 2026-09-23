@@ -66,7 +66,14 @@ class ModelsTest {
     }
 
     @Test
+    fun `LATEST_VERSION 非空且为合法三段版本号`() {
+        // 守卫目标:LATEST_VERSION 必须是 x.y.z 形态,保证 isNewerThan 语义可靠
+        assertTrue(LATEST_VERSION.matches(Regex("\\d+\\.\\d+\\.\\d+")))
+    }
+
+    @Test
     fun `LATEST_VERSION 高于默认版本`() {
-        assertTrue(RemoteVersion(version = LATEST_VERSION).isNewerThan("0.1.0"))
+        // 默认版本 0.0.0(未更新过),任何正式发版都应高于它
+        assertTrue(RemoteVersion(version = LATEST_VERSION).isNewerThan("0.0.0"))
     }
 }
