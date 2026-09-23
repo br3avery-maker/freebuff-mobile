@@ -5,20 +5,25 @@ import android.content.ClipboardManager
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.freebuff.core.data.context.ContextBuilder
 import com.freebuff.core.data.network.ApiError
 import com.freebuff.core.data.network.ChatMessage
 import com.freebuff.core.data.network.toApiError
 import com.freebuff.core.data.repository.CatalogSource
 import com.freebuff.core.data.repository.ChatRepository
 import com.freebuff.core.data.repository.CustomModelRepository
+import com.freebuff.core.data.repository.MemoryRepository
 import com.freebuff.core.data.repository.ModelCatalogRepository
 import com.freebuff.core.data.repository.SessionRepository
 import com.freebuff.core.data.repository.SettingsRepository
 import com.freebuff.core.model.AgentEvent
 import com.freebuff.core.model.ChatMsg
 import com.freebuff.core.model.ChatTarget
+import com.freebuff.core.model.ContextBudget
+import com.freebuff.core.model.ContextPolicy
 import com.freebuff.core.model.DefaultTools
 import com.freebuff.core.model.CustomModel
+import com.freebuff.core.model.MemoryCodec
 import com.freebuff.core.model.MsgStep
 import com.freebuff.core.model.OfficialModel
 import com.freebuff.core.model.Session
@@ -55,6 +60,8 @@ class ChatViewModel @Inject constructor(
     private val settings: SettingsRepository,
     private val chatRepo: ChatRepository,
     private val tools: com.freebuff.core.data.tools.ToolExecutors,
+    private val memoryRepo: MemoryRepository,
+    private val contextBuilder: ContextBuilder,
     private val navigator: AppNavigator,
     @ApplicationContext private val context: Context,
     @Named("gatewayBaseUrl") private val gatewayBaseUrl: String,
@@ -137,6 +144,17 @@ class ChatViewModel @Inject constructor(
     private val toolsEnabled: Boolean
         get() = toolsEnabledState.value
 
+    /** 记忆开关(设置页「上下文记忆」):关闭时不注入记忆块、模型不可 save_memory。 */
+    private val memoryEnabledState: StateFlow<Boolean> = settings.memoryEnabled
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    private val memoryEnabled: Boolean
+        get() = memoryEnabledState.value
+
+    /** 当前能力对应的工具集(记忆关闭时不暴露 save_memory)。 */
+    private fun activeTools(): List<com.freebuff.core.model.AgentTool> =
+        com.freebuff.core.model.DefaultTools.forCapabilities(memory = memoryEnabled)
+
     fun updateInput(v: String) { _chatInput.value = v }
 
     /** 切换会话时丢弃残留草稿:记录上一次输入归属,只有归属变化才清。 */
@@ -196,13 +214,17 @@ class ChatViewModel @Inject constructor(
                 if (!target.isConfigured) {
                     updateAgentText(session.id, "⚠ 尚未配置官方网关地址\n\n当前为演示构建,请在 app 模块的 buildConfigField 配置 DEFAULT_GATEWAY_BASE_URL,或改用自定义模型。")
                 } else {
-                    // agent 循环:模型可请求工具(最多 MAX_TOOL_ROUNDS 轮),执行结果回传后继续生成
-                    val msgs = buildHistory(session.id, ctxRepo)
-                    var assistantPart = "" // 本轮 assistant 已输出的文本(回传时并入 tool_calls 消息)
+                    // agent 循环:每轮由 ContextBuilder 重建上下文(记忆+预算),模型可请求工具(最多 MAX_TOOL_ROUNDS 轮)
                     var round = 0
+                    val protocol = mutableListOf<ChatMessage>() // 跨轮累积:assistant(tool_calls)+tool 结果(严格协议)
                     while (true) {
-                        val calls = runStreamRound(session.id, target, msgs, toolsJson = if (toolsEnabled) DefaultTools.toJsonArrayString() else "")
-                            ?: break // 用户停止
+                        val roundText = StringBuilder() // 本轮流式输出的文本(回传时作为 assistant content)
+                        val base = buildHistory(session.id, ctxRepo, target)
+                        val calls = runStreamRound(
+                            session.id, target, base + protocol,
+                            toolsJson = if (toolsEnabled) DefaultTools.toJsonArrayString(activeTools()) else "",
+                            textSink = roundText,
+                        ) ?: break // 用户停止
                         // 流结束:若有工具调用且未超轮次,执行并回传,继续下一轮
                         if (calls.isEmpty() || !toolsEnabled || round >= MAX_TOOL_ROUNDS) {
                             if (calls.isNotEmpty() && round >= MAX_TOOL_ROUNDS) {
@@ -211,17 +233,13 @@ class ChatViewModel @Inject constructor(
                             break
                         }
                         round++
-                        val toolMsgs = mutableListOf<ChatMessage>()
+                        // 执行工具;结果写入工具卡片(UI)+ 压缩后进入协议消息(下一轮请求)
+                        protocol += ChatMessage.assistantWithCalls(roundText.toString(), calls)
                         for (c in calls) {
-                            val outcome = tools.execute(c)
+                            val outcome = if (c.name == "save_memory") executeSaveMemory(c) else tools.execute(c)
                             completeToolCard(session.id, c.callId, outcome.content, outcome.isError)
-                            toolMsgs += ChatMessage.toolResult(c.callId, outcome.content)
+                            protocol += ChatMessage.toolResult(c.callId, ContextPolicy.compressToolResult(outcome.content))
                         }
-                        // 回传:assistant(含 tool_calls)+ 每个调用一条 tool 结果
-                        msgs += ChatMessage.assistantWithCalls(assistantPart, calls)
-                        msgs += toolMsgs
-                        // 下一轮前把本会话最后一条 agent 消息的文本部分作为 assistant content 累积
-                        assistantPart = ""
                     }
                     finishAgent(session.id)
                 }
@@ -313,19 +331,66 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    private suspend fun buildHistory(sessionId: String, ctxRepo: String): MutableList<ChatMessage> {
+    /**
+     * 构建请求上下文:记忆块 + 会话历史,经 ContextBuilder 预算裁剪与压缩。
+     * 每轮循环重建一次 —— 工具结果落库后,下一轮自动进入上下文。
+     */
+    private suspend fun buildHistory(sessionId: String, ctxRepo: String, target: ChatTarget): List<ChatMessage> {
         val s = sessionRepo.get(sessionId)
-        val msgs = s?.messages.orEmpty()
-            .filter { (it.role == "user" || it.role == "agent") && it.text.isNotBlank() }
-        val history = mutableListOf<ChatMessage>()
-        if (ctxRepo.isNotBlank()) history += ChatMessage.text("system", "本次任务关联仓库:$ctxRepo")
-        history += ChatMessage.text(
-            "system",
-            "你是 Freebuff 助手。可使用提供的工具获取实时信息(联网搜索/GitHub/计算/时间);" +
-                "回答保持简洁,工具结果仅供你参考加工。",
+        val msgs = s?.messages.orEmpty().dropLast(1) // 最后一条是占位 agent 消息,不进上下文
+        val budget = ContextBudget(contextWindow = ContextPolicy.parseCtxWindow(target.ctxWindow))
+        val built = contextBuilder.build(
+            memoryBlocks = if (memoryEnabled) memoryRepo.load() else emptyList(),
+            session = msgs,
+            budget = budget,
+            summarize = llmSummarizer(target),
         )
-        history += msgs.map { ChatMessage.text(it.role, it.text) }
-        return history
+        val out = built.messages.toMutableList()
+        if (ctxRepo.isNotBlank()) {
+            // 任务向导携带的仓库上下文:插在 system 之后,不落库
+            out.add(1, ChatMessage.text("system", "本次任务关联仓库:$ctxRepo"))
+        }
+        return out
+    }
+
+    /**
+     * LLM 摘要压缩执行器(LibreChat 式):把被裁掉的早期消息交给模型生成摘要。
+     * 复用流式管道收集文本;失败由调用方回退提取式摘要。
+     */
+    private fun llmSummarizer(target: ChatTarget): (suspend (List<com.freebuff.core.data.context.ContextTurn>) -> String)? {
+        if (!target.isConfigured) return null
+        return { turns ->
+            val convo = turns.joinToString("\n") { t ->
+                (if (t.role == "agent") "助手" else "用户") + ":" +
+                    t.text.take(800) +
+                    t.toolOutputs.joinToString("") { (tool, pair) -> "\n[" + tool + " 结果] " + pair.second.take(300) }
+            }
+            val sb = StringBuilder()
+            chatRepo.chatStream(
+                endpoint = target.endpoint,
+                model = target.model,
+                apiKey = target.apiKey,
+                headers = target.headers,
+                skipTLS = target.skipTLS,
+                history = listOf(
+                    ChatMessage.text("system", "把以下对话压缩成简洁摘要,保留:用户的最终目标、已确定的关键决策、重要数据与结论、尚未完成的事项。直接输出摘要正文,不要客套。"),
+                    ChatMessage.text("user", convo.take(24000)),
+                ),
+            ).collect { ev ->
+                if (ev is com.freebuff.core.model.AgentEvent.Text) sb.append(ev.chunk)
+            }
+            sb.toString().trim()
+        }
+    }
+
+    /** save_memory 工具端侧执行:写入记忆块,返回给模型的确认文案。 */
+    private suspend fun executeSaveMemory(c: com.freebuff.core.model.ToolCallReq): com.freebuff.core.model.ToolOutcome {
+        val a = MemoryCodec.parseSaveArgs(c.argsJson)
+        return try {
+            com.freebuff.core.model.ToolOutcome(memoryRepo.applySave(a.block, a.content, a.replace))
+        } catch (e: Exception) {
+            com.freebuff.core.model.ToolOutcome("保存记忆失败:" + (e.message ?: e::class.java.simpleName), isError = true)
+        }
     }
 
     /**
@@ -337,6 +402,7 @@ class ChatViewModel @Inject constructor(
         target: ChatTarget,
         history: List<ChatMessage>,
         toolsJson: String,
+        textSink: StringBuilder? = null,
     ): List<com.freebuff.core.model.ToolCallReq>? {
         var calls: List<com.freebuff.core.model.ToolCallReq> = emptyList()
         val job = viewModelScope.launch {
@@ -350,6 +416,7 @@ class ChatViewModel @Inject constructor(
                     history = history,
                     toolsJson = toolsJson,
                 ).collect { ev ->
+                    if (ev is com.freebuff.core.model.AgentEvent.Text) textSink?.append(ev.chunk)
                     handleAgentEvent(sessionId, ev)?.let { calls = it }
                 }
             } catch (t: Throwable) {

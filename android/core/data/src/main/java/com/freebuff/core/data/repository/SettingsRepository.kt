@@ -30,6 +30,9 @@ class SettingsRepository @Inject constructor(
         /** 工具调用开关(对话请求是否携带 function calling 工具定义)。 */
         const val KEY_TOOLS_ENABLED = "toolsEnabled"
 
+        /** 上下文记忆开关(Letta 式记忆块注入 + save_memory 自编辑)。 */
+        const val KEY_MEMORY_ENABLED = "memoryEnabled"
+
         /** Git OAuth access_token(Keystore 加密后的密文)。 */
         const val KEY_GIT_TOKEN = "gitToken"
     }
@@ -97,11 +100,16 @@ class SettingsRepository @Inject constructor(
     /** 工具调用开关:开启后对话请求携带工具定义,模型可触发 function calling(默认开)。 */
     val toolsEnabled = getStringFlow(KEY_TOOLS_ENABLED, "true").map { it.toBoolean() }
 
+    /** 上下文记忆开关:开启后注入核心记忆块并允许模型 save_memory(默认开)。 */
+    val memoryEnabled = getStringFlow(KEY_MEMORY_ENABLED, "true").map { it.toBoolean() }
+
     suspend fun setThemeMode(mode: String) = setString(KEY_THEME_MODE, mode)
     suspend fun setModelId(id: String) = setString(KEY_MODEL_ID, id)
     suspend fun setRepoParse(mode: String) = setString(KEY_REPO_PARSE, mode)
     suspend fun setSignedIn(v: Boolean) = setBool(KEY_SIGNED_IN, v)
     suspend fun setToolsEnabled(v: Boolean) = setBool(KEY_TOOLS_ENABLED, v)
+
+    suspend fun setMemoryEnabled(v: Boolean) = setBool(KEY_MEMORY_ENABLED, v)
     suspend fun setVersion(v: String) = setString(KEY_VERSION, v)
     suspend fun applyUpdate() = setString(KEY_VERSION, LATEST_VERSION)
 }

@@ -64,6 +64,14 @@ class SettingsViewModel @Inject constructor(
     val toolsEnabled: StateFlow<Boolean> = settings.toolsEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
+    /** 上下文记忆开关(Letta 式记忆块 + save_memory 自编辑)。 */
+    val memoryEnabled: StateFlow<Boolean> = settings.memoryEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    fun setMemoryEnabled(v: Boolean) {
+        viewModelScope.launch { settings.setMemoryEnabled(v) }
+    }
+
     val version: StateFlow<String> = settings.version
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "0.1.0")
 

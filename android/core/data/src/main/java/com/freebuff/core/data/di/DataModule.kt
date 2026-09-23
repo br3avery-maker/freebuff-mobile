@@ -11,6 +11,7 @@ import com.freebuff.core.data.repository.CustomModelRepository
 import com.freebuff.core.data.repository.DataMigrator
 import com.freebuff.core.data.repository.DemoGitAuthRepository
 import com.freebuff.core.data.repository.GitAuthRepository
+import com.freebuff.core.data.repository.MemoryRepository
 import com.freebuff.core.data.repository.ModelCatalogRepository
 import com.freebuff.core.data.repository.RealGitAuthRepository
 import com.freebuff.core.data.repository.SessionRepository
@@ -108,4 +109,9 @@ object DataModule {
     @Singleton
     fun provideDataMigrator(dao: FreebuffDao, crypto: com.freebuff.core.data.security.CryptoManager): DataMigrator =
         DataMigrator(dao, crypto)
+
+    /** 记忆仓库(Letta 式核心记忆块持久化)。 */
+    @Provides
+    @Singleton
+    fun provideMemoryRepository(dao: FreebuffDao): MemoryRepository = MemoryRepository(dao)
 }

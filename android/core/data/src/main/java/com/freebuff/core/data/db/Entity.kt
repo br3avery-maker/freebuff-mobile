@@ -67,6 +67,18 @@ data class SettingEntity(
     val value: String,
 )
 
+/**
+ * 记忆条目表(Letta/MemGPT 式核心记忆块的持久化载体)。
+ * block=块名(persona/user/project…),content=块内容,sort 决定注入顺序。
+ */
+@Entity(tableName = "memories")
+data class MemoryEntity(
+    @PrimaryKey val block: String,
+    val content: String,
+    val charLimit: Int,
+    val sort: Long,
+)
+
 /** 会话 + 消息一对多聚合(Room @Relation)。 */
 data class SessionWithMessages(
     @Embedded val session: SessionEntity,

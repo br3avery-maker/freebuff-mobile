@@ -164,6 +164,7 @@ class CustomModelRepository @Inject constructor(
         headers = parseHeaders(m.headers),
         skipTLS = m.skipTLS,
         name = m.name,
+        ctxWindow = m.ctx,
     )
 
     /** 解析自定义请求头 JSON → 键值。 */

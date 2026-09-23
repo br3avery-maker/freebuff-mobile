@@ -40,6 +40,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val git by viewModel.git.collectAsState()
     val repoParse by viewModel.repoParse.collectAsState()
     val toolsEnabled by viewModel.toolsEnabled.collectAsState()
+    val memoryEnabled by viewModel.memoryEnabled.collectAsState()
     val customModels by viewModel.customModels.collectAsState()
     val sessionCount by viewModel.sessionCount.collectAsState()
     val clearArmed by viewModel.clearArmed.collectAsState()
@@ -75,6 +76,12 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                     modifier = Modifier.padding(bottom = 10.dp))
                 SegRow(listOf("开启", "关闭"), if (toolsEnabled) 0 else 1) { i ->
                     viewModel.setToolsEnabled(i == 0)
+                }
+                Spacer(Modifier.height(14.dp))
+                Text("上下文记忆", color = t.text2, fontSize = 13.5.sp,
+                    modifier = Modifier.padding(bottom = 10.dp))
+                SegRow(listOf("开启", "关闭"), if (memoryEnabled) 0 else 1) { i ->
+                    viewModel.setMemoryEnabled(i == 0)
                 }
             }
 

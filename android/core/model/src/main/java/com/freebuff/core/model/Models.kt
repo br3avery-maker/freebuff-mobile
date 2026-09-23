@@ -110,6 +110,8 @@ data class ChatTarget(
     val headers: Map<String, String> = emptyMap(),
     val skipTLS: Boolean = false,
     val name: String = "",
+    /** 上下文窗口声明("128k"/"1m"/"200000"),空串用默认保守值。 */
+    val ctxWindow: String = "",
 ) {
     val isConfigured: Boolean get() = endpoint.isNotBlank()
 }

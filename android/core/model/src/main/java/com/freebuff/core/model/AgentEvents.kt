@@ -79,6 +79,14 @@ private val TOOL_LABELS: Map<String, String> = mapOf(
     "spawn_agent_inline" to "后台代理",
     "lookup_agent_info" to "查询代理信息",
     "task_completed" to "任务完成",
+    "web_search" to "联网搜索",
+    "web_fetch" to "抓取网页",
+    "github_search_repositories" to "搜索仓库",
+    "github_get_file" to "读取文件",
+    "github_get_readme" to "读取 README",
+    "calculator" to "计算器",
+    "current_time" to "当前时间",
+    "save_memory" to "保存记忆",
     "end_turn" to "结束回合",
     "ask_user" to "等待输入",
     "suggest_followups" to "推荐后续",
@@ -95,7 +103,9 @@ fun toolDisplayName(tool: String): String = TOOL_LABELS[tool] ?: tool
 fun toolGlyph(tool: String): String = when (tool) {
     "read_files", "read_subtree", "list_directory", "glob", "find_files", "read_docs" -> "▤"
     "code_search", "web_search", "gravity_index" -> "⌕"
-    "read_url" -> "⌘"
+    "read_url", "web_fetch" -> "⌘"
+    "github_search_repositories", "github_get_file", "github_get_readme" -> "⌥"
+    "save_memory" -> "❖"
     "write_file", "str_replace", "apply_patch", "propose_write_file", "propose_str_replace" -> "✎"
     "run_terminal_command", "run_file_change_hooks" -> "›_"
     "spawn_agents", "spawn_agent_inline" -> "✷"

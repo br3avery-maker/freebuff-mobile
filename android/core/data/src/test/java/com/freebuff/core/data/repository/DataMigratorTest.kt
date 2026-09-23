@@ -6,6 +6,7 @@ import com.freebuff.core.data.db.FreebuffDao
 import com.freebuff.core.data.db.MessageEntity
 import com.freebuff.core.data.db.SessionEntity
 import com.freebuff.core.data.db.SessionWithMessages
+import com.freebuff.core.data.db.MemoryEntity
 import com.freebuff.core.data.db.SettingEntity
 import com.freebuff.core.data.security.CryptoManager
 import com.freebuff.core.model.SEED_SESSIONS
@@ -295,6 +296,7 @@ class DataMigratorTest {
         val messages = LinkedHashMap<String, List<MessageEntity>>()
         val customModels = LinkedHashMap<String, CustomModelEntity>()
         val settings = LinkedHashMap<String, String>()
+        val memories = LinkedHashMap<String, MemoryEntity>()
 
         var clearCustomModelsCalls = 0
         var upsertCustomModelCalls = 0
@@ -384,6 +386,12 @@ class DataMigratorTest {
         override suspend fun clearSettings() {
             settings.clear()
         }
+
+        override suspend fun allMemories(): List<MemoryEntity> = memories.values.sortedBy { it.sort }
+        override fun observeMemories(): Flow<List<MemoryEntity>> = flowOf(memories.values.sortedBy { it.sort })
+        override suspend fun upsertMemory(memory: MemoryEntity) { memories[memory.block] = memory }
+        override suspend fun deleteMemory(block: String) { memories.remove(block) }
+        override suspend fun clearMemories() = memories.clear()
     }
 
     /** 空实现 DAO:只关心 migrate 返回值,不检查落库。 */
@@ -411,5 +419,11 @@ class DataMigratorTest {
         override suspend fun upsertSetting(setting: SettingEntity) = Unit
         override suspend fun deleteSetting(key: String) = Unit
         override suspend fun clearSettings() = Unit
+
+        override suspend fun allMemories(): List<MemoryEntity> = emptyList()
+        override fun observeMemories(): Flow<List<MemoryEntity>> = flowOf(emptyList())
+        override suspend fun upsertMemory(memory: MemoryEntity) = Unit
+        override suspend fun deleteMemory(block: String) = Unit
+        override suspend fun clearMemories() = Unit
     }
 }

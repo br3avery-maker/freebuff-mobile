@@ -94,11 +94,24 @@ object DefaultTools {
             description = "获取设备当前日期与时间。",
             params = emptyList(),
         ),
+        AgentTool(
+            name = "save_memory",
+            description = "更新你的核心记忆块(Letta 式):block 取 persona(你的身份)/user(关于用户的偏好与习惯)/project(当前任务焦点与进展)。content 为新的块内容;replace=false 时追加到现有内容后。适合记住用户偏好、长期任务上下文等跨会话信息。",
+            params = listOf(
+                AgentTool.Param("block", "string", "记忆块名:persona / user / project"),
+                AgentTool.Param("content", "string", "要保存的内容(精炼,单块上限约 600 字)"),
+                AgentTool.Param("replace", "boolean", "true=覆盖块内容(默认),false=追加", required = false),
+            ),
+        ),
     )
 
     /** 序列化为 OpenAI 兼容 `tools` 数组字符串(直接放进请求体)。 */
     fun toJsonArrayString(tools: List<AgentTool> = ALL): String =
         JSONArray().apply { tools.forEach { put(it.toJsonObject()) } }.toString()
+
+    /** 按开关过滤的工具集:记忆关闭时移除 save_memory(模型不应看到不可用的工具)。 */
+    fun forCapabilities(memory: Boolean): List<AgentTool> =
+        if (memory) ALL else ALL.filter { it.name != "save_memory" }
 }
 
 /** assistant 发起的一笔工具调用(循环回传时组装 assistant 消息用)。 */

@@ -84,4 +84,20 @@ interface FreebuffDao {
 
     @Query("DELETE FROM settings")
     suspend fun clearSettings()
+
+    // ---------- memories(Letta 式核心记忆块) ----------
+    @Query("SELECT * FROM memories ORDER BY sort ASC")
+    suspend fun allMemories(): List<MemoryEntity>
+
+    @Query("SELECT * FROM memories ORDER BY sort ASC")
+    fun observeMemories(): Flow<List<MemoryEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertMemory(memory: MemoryEntity)
+
+    @Query("DELETE FROM memories WHERE block = :block")
+    suspend fun deleteMemory(block: String)
+
+    @Query("DELETE FROM memories")
+    suspend fun clearMemories()
 }

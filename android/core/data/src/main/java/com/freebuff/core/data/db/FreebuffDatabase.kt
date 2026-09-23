@@ -9,8 +9,8 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [SessionEntity::class, MessageEntity::class, CustomModelEntity::class, SettingEntity::class],
-    version = 2,
+    entities = [SessionEntity::class, MessageEntity::class, CustomModelEntity::class, SettingEntity::class, MemoryEntity::class],
+    version = 3,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -28,13 +28,26 @@ abstract class FreebuffDatabase : RoomDatabase() {
             }
         }
 
+        /** v3:memories 表(Letta 式核心记忆块持久化)。 */
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS memories (" +
+                        "block TEXT NOT NULL PRIMARY KEY, " +
+                        "content TEXT NOT NULL, " +
+                        "charLimit INTEGER NOT NULL, " +
+                        "sort INTEGER NOT NULL)",
+                )
+            }
+        }
+
         fun get(context: Context): FreebuffDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext,
                 FreebuffDatabase::class.java,
                 "freebuff.db",
             )
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build().also { instance = it }
         }
     }
