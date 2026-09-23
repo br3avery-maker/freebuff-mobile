@@ -33,6 +33,7 @@ import com.freebuff.core.ui.theme.LocalTokens
  */
 @Composable
 fun UpdateSheet(viewModel: SettingsViewModel = hiltViewModel()) {
+    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
     val t = LocalTokens.current
     val version by viewModel.version.collectAsState()
     var phase by remember { mutableStateOf("checking") }
@@ -94,7 +95,13 @@ fun UpdateSheet(viewModel: SettingsViewModel = hiltViewModel()) {
                             viewModel.applyUpdate(rv?.version ?: "")
                             phase = "done"
                         }.padding(horizontal = 26.dp, vertical = 11.dp))
-                    Text("下载与安装为后续接入点(本次仅升级版本号)",
+                    if (!rv?.url.isNullOrBlank()) {
+                        Text("前往下载 →", color = t.accentInk, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(top = 14.dp).clickable {
+                                uriHandler.openUri(rv!!.url)
+                            }.padding(vertical = 4.dp))
+                    }
+                    Text("更新包将引导至发布页下载;同意后 App 标记为已更新",
                         color = t.text3, fontSize = 10.5.sp, modifier = Modifier.padding(top = 8.dp))
                 }
             }

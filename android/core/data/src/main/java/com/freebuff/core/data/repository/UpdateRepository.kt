@@ -44,7 +44,7 @@ class UpdateRepository @Inject constructor(
                 val notes = o.optJSONArray("notes")?.let { arr ->
                     (0 until arr.length()).mapNotNull { arr.optString(it).takeIf { s -> s.isNotEmpty() } }
                 } ?: emptyList()
-                RemoteVersion(version = version, notes = notes)
+                RemoteVersion(version = version, notes = notes, url = o.optString("url"))
             }
         }
     }

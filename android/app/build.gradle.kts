@@ -38,10 +38,12 @@ android {
         // 真实接入配置：发布时替换为生产值。
         // - DEFAULT_GATEWAY_BASE_URL: 官方模型网关根地址(留空 = 未配置, UI 明确提示)
         // - GITHUB_OAUTH_CLIENT_ID:   GitHub OAuth App 的 client_id(留空 = 演示数据回退)
-        // - UPDATE_URL:               版本检查 JSON 地址(留空 = 版本检查跳过)
+        // - UPDATE_URL:               版本检查 JSON 地址(留空 = 版本检查跳过)。
+        //   指向仓库 dist/update.json(raw.githubusercontent.com 直链,发版工作流自动维护):
+        //   {"version":"0.0.1","notes":["..."]} —— checkForUpdate 拉取并与当前版本比较。
         buildConfigField("String", "DEFAULT_GATEWAY_BASE_URL", "\"\"")
         buildConfigField("String", "GITHUB_OAUTH_CLIENT_ID", "\"\"")
-        buildConfigField("String", "UPDATE_URL", "\"\"")
+        buildConfigField("String", "UPDATE_URL", "\"https://raw.githubusercontent.com/doubao01/freebuff-mobile/main/dist/update.json\"")
     }
 
     // 正式签名: 若 android/keystore.properties 存在, 用自有 keystore 签 release;

@@ -118,6 +118,8 @@ data class ChatTarget(
 data class RemoteVersion(
     val version: String = "",
     val notes: List<String> = emptyList(),
+    /** 新版 APK 下载页(可选)。update.json 带 url 时,更新面板展示「前往下载」。 */
+    val url: String = "",
 ) {
     fun isNewerThan(current: String): Boolean {
         val v = version.removePrefix("v")
