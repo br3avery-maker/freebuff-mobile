@@ -238,6 +238,11 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /** 仅拉取端点 /v1/models 列表(不做连接测试),供表单「拉取列表」快速选模型。 */
+    fun fetchModelList(m: CustomModel, onResult: (ApiResult<List<String>>) -> Unit) {
+        viewModelScope.launch { onResult(customModelRepo.fetchModels(m)) }
+    }
+
     /**
      * 恢复原始记录(清洗前),仅当迁移时报告过修复。
      * 非对象记录(raw 里的 null)无法落库,自动跳过;ID 为空的原始记录在落库前

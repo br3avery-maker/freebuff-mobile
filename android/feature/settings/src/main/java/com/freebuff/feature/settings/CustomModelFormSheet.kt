@@ -5,6 +5,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -38,6 +40,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.freebuff.core.data.network.ApiResult
 import com.freebuff.core.data.network.ProbeResult
 import com.freebuff.core.model.CustomModel
 import com.freebuff.core.model.Probe
@@ -66,7 +69,7 @@ fun CustomModelFormSheet(editId: String? = null, viewModel: SettingsViewModel = 
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = 14.dp)) {
             FormBasic(f)
             FormAbility(f)
-            FormEndpoint(f)
+            FormEndpoint(viewModel, f)
             FormTest(viewModel, f)
             if (editing != null && editing.models.isNotEmpty()) FormSnapshot(f, editing)
             FormAdvanced(f)
@@ -92,6 +95,11 @@ private class FState(edit: CustomModel?) {
     var ms by mutableStateOf<Int?>(null)
     var resultList by mutableStateOf<List<String>?>(null)
     var probe by mutableStateOf<Map<String, Probe>>(emptyMap())
+    var fetchPhase by mutableStateOf("idle")
+    var pickList by mutableStateOf<List<String>?>(null)
+
+    /** 「拉取列表」的专属错误:就地显示在按钮下方,不与「测试连接」的 err 混用。 */
+    var fetchErr by mutableStateOf<String?>(null)
 
     /** 修改会影响请求的关键字段后,测试结果不再可信:失效成功标记与快照网格。 */
     fun invalidateTest() {
@@ -99,6 +107,7 @@ private class FState(edit: CustomModel?) {
         tested = false
         resultList = null
         ms = null
+        pickList = null
     }
 }
 
@@ -106,7 +115,6 @@ private class FState(edit: CustomModel?) {
 private fun FormBasic(f: FState) {
     SectionLabel2("基本信息")
     Field("显示名称", f.name) { f.name = it }
-    Field("模型 ID", f.apiId, onFocusedEdit = { f.invalidateTest() }) { f.apiId = it }
 }
 
 @Composable
@@ -158,7 +166,7 @@ private fun Field(label: String, value: String, onFocusedEdit: (() -> Unit)? = n
 }
 
 @Composable
-private fun FormEndpoint(f: FState) {
+private fun FormEndpoint(viewModel: SettingsViewModel, f: FState) {
     val t = LocalTokens.current
     SectionLabel2("端点")
     Column(Modifier.fillMaxWidth().clip(R14).background(t.surface2).padding(horizontal = 12.dp, vertical = 4.dp)) {
@@ -203,6 +211,55 @@ private fun FormEndpoint(f: FState) {
             modifier = Modifier.clip(RFull).clickable { f.keyVisible = !f.keyVisible }.padding(horizontal = 10.dp, vertical = 4.dp))
     }
     Spacer(Modifier.height(9.dp))
+    // 模型 ID:手填 + 「拉取列表」下拉选择(需先填 Base URL;拉取只 GET /v1/models,不做连接测试)
+    Row(verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().clip(R14).background(t.surface2).padding(horizontal = 12.dp, vertical = 4.dp)) {
+        Column(Modifier.weight(1f)) {
+            Text("模型 ID", color = t.text3, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
+            BasicTextField(value = f.apiId, onValueChange = {
+                f.apiId = it
+                f.invalidateTest()
+            },
+                textStyle = TextStyle(color = t.text, fontSize = 13.sp),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp))
+        }
+        Text(if (f.fetchPhase == "loading") "◐ 拉取中" else "拉取列表",
+            color = if (f.fetchPhase == "loading") t.text3 else t.accentInk, fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.clip(RFull)
+                .background(if (f.fetchPhase == "loading") t.surface3 else t.accent)
+                .clickable(enabled = f.fetchPhase != "loading") {
+                    if (f.base.isBlank()) {
+                        f.fetchErr = "请先填写 Base URL,再拉取模型列表"
+                    } else {
+                        f.fetchErr = null
+                        f.fetchPhase = "loading"
+                        viewModel.fetchModelList(
+                            CustomModel(
+                                name = f.name, apiId = f.apiId,
+                                base = normEndpoint(f.base),
+                                key = f.key, ctx = f.ctx, timeout = f.timeout,
+                                headers = f.headers, skipTLS = f.skipTLS,
+                            ),
+                        ) { r ->
+                            f.fetchPhase = "idle"
+                            when (r) {
+                                is ApiResult.Ok -> {
+                                    f.pickList = r.data
+                                    if (r.data.isEmpty()) f.fetchErr = "端点返回空模型列表,可直接手动填写"
+                                }
+                                is ApiResult.Err -> f.fetchErr = r.error.userMessage
+                            }
+                        }
+                    }
+                }.padding(horizontal = 12.dp, vertical = 6.dp))
+    }
+    f.pickList?.let { list -> ModelPickList(f, list) }
+    f.fetchErr?.let {
+        Text(it, color = t.danger, fontSize = 11.5.sp, modifier = Modifier.padding(top = 6.dp))
+    }
+    Spacer(Modifier.height(4.dp))
     Row(Modifier.fillMaxWidth().clip(R14).background(t.surface2).clickable { f.skipTLS = !f.skipTLS }
         .padding(horizontal = 12.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
@@ -234,6 +291,42 @@ private fun FormAdvanced(f: FState) {
                     fontFamily = FontFamily.Monospace),
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                 minLines = 2)
+        }
+    }
+}
+
+/** 「拉取列表」的下拉选择面板:点选回填模型 ID,可收起;选择后失效旧测试结果。 */
+@Composable
+private fun ModelPickList(f: FState, list: List<String>) {
+    val t = LocalTokens.current
+    Column(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().clickable { f.pickList = null }.padding(vertical = 6.dp)) {
+            Text("端点可用模型 " + list.size + " 个 · 点选填入", color = t.text3, fontSize = 10.5.sp,
+                modifier = Modifier.weight(1f).padding(start = 2.dp))
+            Text("收起 ▴", color = t.text3, fontSize = 10.5.sp, modifier = Modifier.padding(start = 8.dp))
+        }
+        // 有界高度 + LazyColumn:大列表(数百个模型)不会撑爆弹窗,内部滚动浏览
+        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 240.dp).clip(R14)
+            .background(t.surface).border(1.dp, t.border, R14).padding(horizontal = 8.dp, vertical = 6.dp)) {
+            items(list.size) { i ->
+                val mid = list[i]
+                val cur = mid == f.apiId
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp))
+                        .background(if (cur) t.accentSoft else Color.Transparent)
+                        .clickable {
+                            f.apiId = mid
+                            f.invalidateTest()
+                            f.pickList = null
+                        }.padding(horizontal = 9.dp, vertical = 8.dp)) {
+                    Text(mid, color = if (cur) t.accentInk else t.text, fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f))
+                    if (cur) Text("已选", color = t.accent, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                }
+                if (i < list.lastIndex) Spacer(Modifier.height(2.dp))
+            }
         }
     }
 }

@@ -1,6 +1,7 @@
 package com.freebuff.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -16,7 +17,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -128,7 +131,8 @@ fun FreebuffRoot(navigator: AppNavigator) {
                         navigator.consumeSnack()
                     }
                 }
-                Box(Modifier.fillMaxSize().background(tokens.bg)) {
+                // 边到边绘制:背景铺满全屏,内容用系统栏内边距避让状态栏/手势条
+                Box(Modifier.fillMaxSize().background(tokens.bg).statusBarsPadding().navigationBarsPadding()) {
                     when (navState.route) {
                         AppNavState.ROUTE_WELCOME -> WelcomeScreen()
                         AppNavState.ROUTE_HOME -> HomeScreen()
@@ -144,11 +148,34 @@ fun FreebuffRoot(navigator: AppNavigator) {
                             ModalSheetHost(false, { navigator.closeSheet() }) {
                                 SessionMenuSheet(id.removePrefix("sess-menu:"))
                             }
+                        } else if (id == AppNavState.SHEET_CUSTOM_FORM ||
+                            id.startsWith(AppNavState.SHEET_CUSTOM_FORM + ":")
+                        ) {
+                            // 自定义模型表单:居中弹窗(Dialog),内容长的表单比底部面板更聚焦
+                            val editId = id.removePrefix(AppNavState.SHEET_CUSTOM_FORM)
+                                .removePrefix(":").ifBlank { null }
+                            androidx.compose.ui.window.Dialog(
+                                onDismissRequest = { navigator.closeSheet() },
+                                properties = androidx.compose.ui.window.DialogProperties(
+                                    usePlatformDefaultWidth = false,
+                                    decorFitsSystemWindows = false,
+                                ),
+                            ) {
+                                    Box(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 18.dp, vertical = 24.dp),
+                                        contentAlignment = Alignment.Center) {
+                                        Column(
+                                            Modifier.fillMaxWidth()
+                                                .clip(RoundedCornerShape(22.dp))
+                                                .background(tokens.elev)
+                                                .border(1.dp, tokens.border, RoundedCornerShape(22.dp))
+                                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                                        ) {
+                                        CustomModelFormSheet(editId = editId)
+                                    }
+                                }
+                            }
                         } else {
-                            val expand = id == AppNavState.SHEET_TASK ||
-                                id == AppNavState.SHEET_CUSTOM_FORM ||
-                                id.startsWith(AppNavState.SHEET_CUSTOM_FORM + ":")
-                            ModalSheetHost(expand, { navigator.closeSheet() }) {
+                            ModalSheetHost(false, { navigator.closeSheet() }) {
                                 when (id) {
                                     AppNavState.SHEET_MODEL -> ModelSheet()
                                     AppNavState.SHEET_TASK -> TaskWizardSheet(
@@ -160,13 +187,6 @@ fun FreebuffRoot(navigator: AppNavigator) {
                                     AppNavState.SHEET_CUSTOM_MODELS -> CustomModelsSheet()
                                     AppNavState.SHEET_UPDATE -> UpdateSheet()
                                     AppNavState.SHEET_ABOUT -> AboutSheet()
-                                    else -> {
-                                        val prefix = AppNavState.SHEET_CUSTOM_FORM + ":"
-                                        // 兼容两种标识:裸 "custom-form"(新建)与 "custom-form:<id>"(编辑)
-                                        if (id == AppNavState.SHEET_CUSTOM_FORM || id.startsWith(prefix)) {
-                                            CustomModelFormSheet(editId = id.removePrefix(prefix))
-                                        }
-                                    }
                                 }
                             }
                         }
