@@ -100,7 +100,7 @@ data class RepairReport(
 )
 
 /** 版本检查:小于当前版本号视为有更新。 */
-const val LATEST_VERSION = "0.2.3"
+const val LATEST_VERSION = "0.0.1"
 
 /** 一次对话的完整请求目标(由模型解析而来,官方/自定义统一)。 */
 data class ChatTarget(
