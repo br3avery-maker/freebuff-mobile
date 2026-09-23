@@ -27,6 +27,12 @@ sealed interface AgentEvent {
 
     /** 回合结束:消息落定;suggest_followups 卡片在此之后渲染。 */
     object EndTurn : AgentEvent
+
+    /**
+     * 一轮流结束时模型请求的全部工具调用(完整参数 JSON)。
+     * 仅在请求携带 tools 且模型触发 function calling 时出现;agent 循环据此执行并回传。
+     */
+    data class Calls(val calls: List<ToolCallReq>) : AgentEvent
 }
 
 /** 消息内嵌的工具卡片(随消息持久化)。state: running | done | error。 */

@@ -2,6 +2,7 @@ package com.freebuff.core.data.repository
 
 import com.freebuff.core.data.network.ApiError
 import com.freebuff.core.data.network.AgentEventParser
+import com.freebuff.core.data.network.ChatMessage
 import com.freebuff.core.data.network.buildChatRequest
 import com.freebuff.core.data.network.parseSseData
 import com.freebuff.core.model.AgentEvent
@@ -35,7 +36,8 @@ class ChatRepository @Inject constructor() {
      * @param apiKey Bearer Key(可为空)
      * @param headers 附加请求头(JSON 解析后的键值)
      * @param skipTLS 是否跳过 TLS 校验
-     * @param history 历史消息 (role, content)
+     * @param history 历史消息(文本/工具调用/工具结果混合)
+     * @param toolsJson OpenAI 兼容 tools 数组;空串表示不启用 function calling
      * @return 事件流,按到达顺序;HTTP/网络失败时抛出异常
      */
     fun chatStream(
@@ -44,7 +46,8 @@ class ChatRepository @Inject constructor() {
         apiKey: String,
         headers: Map<String, String>,
         skipTLS: Boolean,
-        history: List<Pair<String, String>>,
+        history: List<ChatMessage>,
+        toolsJson: String = "",
     ): Flow<AgentEvent> = callbackFlow {
         val (request, client) = buildChatRequest(
             endpoint = endpoint,
@@ -54,6 +57,7 @@ class ChatRepository @Inject constructor() {
             messages = history,
             stream = true,
             skipTLS = skipTLS,
+            toolsJson = toolsJson,
         )
         val parser = AgentEventParser()
         val call = client.newCall(request)
@@ -80,6 +84,9 @@ class ChatRepository @Inject constructor() {
                     // 流正常结束:把参数累积未落定的工具调用 flush 出来
                     // (部分端点不发 finish_reason=tool_calls)
                     parser.flush().forEach { trySend(it) }
+                    // 把结构化调用交给 agent 循环(执行→回传→继续对话)
+                    val calls = parser.drainCalls()
+                    if (calls.isNotEmpty()) trySend(AgentEvent.Calls(calls))
                     close()
                 } catch (t: Throwable) {
                     close(t)

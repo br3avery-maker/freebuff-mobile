@@ -1,6 +1,7 @@
 package com.freebuff.core.data.repository
 
 import com.freebuff.core.data.network.ApiError
+import com.freebuff.core.data.network.ChatMessage
 import com.freebuff.core.model.AgentEvent
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
@@ -36,7 +37,7 @@ class ChatRepositoryTest {
             apiKey = "secret",
             headers = emptyMap(),
             skipTLS = false,
-            history = history,
+            history = history.map { ChatMessage.text(it.first, it.second) },
         )
 
     @Test
@@ -61,7 +62,7 @@ class ChatRepositoryTest {
             apiKey = "secret",
             headers = mapOf("X-Custom" to "1"),
             skipTLS = false,
-            history = listOf("user" to "hi"),
+            history = listOf(ChatMessage.text("user", "hi")),
         ).toList()
 
         val req = server.takeRequest()
@@ -114,6 +115,7 @@ class ChatRepositoryTest {
                 headers = emptyMap(),
                 skipTLS = false,
                 history = emptyList(),
+                toolsJson = "",
             ).toList()
             fail("应抛出异常")
         } catch (e: Exception) {

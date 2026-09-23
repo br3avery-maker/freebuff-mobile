@@ -27,6 +27,9 @@ class SettingsRepository @Inject constructor(
         const val KEY_SIGNED_IN = "signedIn"
         const val KEY_GIT = "git"
 
+        /** 工具调用开关(对话请求是否携带 function calling 工具定义)。 */
+        const val KEY_TOOLS_ENABLED = "toolsEnabled"
+
         /** Git OAuth access_token(Keystore 加密后的密文)。 */
         const val KEY_GIT_TOKEN = "gitToken"
     }
@@ -91,10 +94,14 @@ class SettingsRepository @Inject constructor(
     val version = getStringFlow(KEY_VERSION, LATEST_VERSION)
     val signedIn = getStringFlow(KEY_SIGNED_IN, "false").map { it.toBoolean() }
 
+    /** 工具调用开关:开启后对话请求携带工具定义,模型可触发 function calling(默认开)。 */
+    val toolsEnabled = getStringFlow(KEY_TOOLS_ENABLED, "true").map { it.toBoolean() }
+
     suspend fun setThemeMode(mode: String) = setString(KEY_THEME_MODE, mode)
     suspend fun setModelId(id: String) = setString(KEY_MODEL_ID, id)
     suspend fun setRepoParse(mode: String) = setString(KEY_REPO_PARSE, mode)
     suspend fun setSignedIn(v: Boolean) = setBool(KEY_SIGNED_IN, v)
+    suspend fun setToolsEnabled(v: Boolean) = setBool(KEY_TOOLS_ENABLED, v)
     suspend fun setVersion(v: String) = setString(KEY_VERSION, v)
     suspend fun applyUpdate() = setString(KEY_VERSION, LATEST_VERSION)
 }

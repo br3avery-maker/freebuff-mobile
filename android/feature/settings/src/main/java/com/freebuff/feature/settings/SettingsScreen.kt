@@ -39,6 +39,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val modelName by viewModel.modelName.collectAsState()
     val git by viewModel.git.collectAsState()
     val repoParse by viewModel.repoParse.collectAsState()
+    val toolsEnabled by viewModel.toolsEnabled.collectAsState()
     val customModels by viewModel.customModels.collectAsState()
     val sessionCount by viewModel.sessionCount.collectAsState()
     val clearArmed by viewModel.clearArmed.collectAsState()
@@ -69,6 +70,12 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                     sub = "点击选择对话使用的模型",
                     onClick = { viewModel.openModelSheet() },
                 )
+                Spacer(Modifier.height(14.dp))
+                Text("工具调用", color = t.text2, fontSize = 13.5.sp,
+                    modifier = Modifier.padding(bottom = 10.dp))
+                SegRow(listOf("开启", "关闭"), if (toolsEnabled) 0 else 1) { i ->
+                    viewModel.setToolsEnabled(i == 0)
+                }
             }
 
             /* ---------------- 集成 ---------------- */

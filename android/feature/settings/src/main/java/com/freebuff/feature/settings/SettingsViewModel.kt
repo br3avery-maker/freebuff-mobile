@@ -60,6 +60,10 @@ class SettingsViewModel @Inject constructor(
     val modelId: StateFlow<String> = settings.modelId
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "deepseek-v4-flash")
 
+    /** 工具调用开关(对话请求携带 function calling 工具定义)。 */
+    val toolsEnabled: StateFlow<Boolean> = settings.toolsEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
     val version: StateFlow<String> = settings.version
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "0.1.0")
 
@@ -155,6 +159,12 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             settings.setRepoParse(mode)
             navigator.showSnack(if (mode == "strict") "已切换:严格解析" else "已切换:宽松原样")
+        }
+    }
+
+    fun setToolsEnabled(v: Boolean) {
+        viewModelScope.launch {
+            settings.setToolsEnabled(v)
         }
     }
 

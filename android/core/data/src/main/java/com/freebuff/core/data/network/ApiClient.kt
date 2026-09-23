@@ -1,5 +1,6 @@
 package com.freebuff.core.data.network
 
+import com.freebuff.core.model.ToolCallReq
 import com.freebuff.core.model.endpointUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -53,28 +54,64 @@ fun clientFor(skipTLS: Boolean, base: OkHttpClient = buildDefaultClient()): OkHt
         .build()
 }
 
-/** 构造 OpenAI 兼容聊天请求。 */
+/**
+ * 一条对话消息:普通文本消息或工具结果消息。
+ * - 文本:content 即文本,toolCalls 为空
+ * - assistant 触发工具:content=文本部分(可空),toolCalls=模型请求的调用列表(序列化为 tool_calls)
+ * - 工具结果:role 固定 "tool",content=结果文本,toolCallId=对应调用 id
+ */
+data class ChatMessage(
+    val role: String,
+    val content: String,
+    val toolCalls: List<ToolCallReq> = emptyList(),
+    val toolCallId: String = "",
+) {
+    companion object {
+        fun text(role: String, content: String) = ChatMessage(role, content)
+        fun toolResult(callId: String, content: String) = ChatMessage("tool", content, toolCallId = callId)
+        fun assistantWithCalls(content: String, calls: List<ToolCallReq>) =
+            ChatMessage("assistant", content, toolCalls = calls)
+    }
+}
+
+/** 构造 OpenAI 兼容聊天请求。toolsJson 非空时附带 function calling 工具定义。 */
 fun buildChatRequest(
     endpoint: String,
     model: String,
     apiKey: String,
     headers: Map<String, String>,
-    messages: List<Pair<String, String>>,
+    messages: List<ChatMessage>,
     stream: Boolean,
     skipTLS: Boolean,
+    toolsJson: String = "",
 ): Pair<Request, OkHttpClient> {
     val body = JSONObject()
         .put("model", model)
         .put("stream", stream)
         .put("messages", JSONArray().apply {
-            messages.forEach { (role, content) ->
-                put(JSONObject().put("role", role).put("content", content))
+            messages.forEach { m ->
+                val o = JSONObject().put("role", m.role).put("content", m.content)
+                if (m.role == "assistant" && m.toolCalls.isNotEmpty()) {
+                    o.put("tool_calls", JSONArray().apply {
+                        m.toolCalls.forEach { c ->
+                            put(JSONObject()
+                                .put("id", c.callId)
+                                .put("type", "function")
+                                .put("function", JSONObject().put("name", c.name).put("arguments", c.argsJson.ifBlank { "{}" })))
+                        }
+                    })
+                }
+                if (m.role == "tool") {
+                    o.put("tool_call_id", m.toolCallId)
+                }
+                put(o)
             }
         })
-        .toString()
+    if (toolsJson.isNotBlank()) body.put("tools", JSONArray(toolsJson))
+    val json = body.toString()
     val builder = Request.Builder()
         .url(endpointUrl(endpoint))
-        .post(body.toRequestBody("application/json".toMediaType()))
+        .post(json.toRequestBody("application/json".toMediaType()))
     if (apiKey.isNotBlank()) builder.addHeader("Authorization", "Bearer $apiKey")
     headers.filter { (k, _) -> k.isNotBlank() }.forEach { (k, v) -> builder.addHeader(k, v) }
     return builder.build() to clientFor(skipTLS)

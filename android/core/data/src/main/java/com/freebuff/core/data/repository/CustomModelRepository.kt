@@ -67,7 +67,7 @@ class CustomModelRepository @Inject constructor(
                 model = m.apiId.ifBlank { m.name },
                 apiKey = m.key,
                 headers = parseHeaders(m.headers),
-                messages = listOf("user" to "ping"),
+                messages = listOf(com.freebuff.core.data.network.ChatMessage.text("user", "ping")),
                 stream = false,
                 skipTLS = m.skipTLS,
             )

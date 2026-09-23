@@ -1,6 +1,7 @@
 package com.freebuff.core.data.network
 
 import com.freebuff.core.model.AgentEvent
+import com.freebuff.core.model.ToolCallReq
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -64,6 +65,28 @@ class AgentEventParser {
      * 兜底部分端点不发 finish_reason=tool_calls 的情况。
      */
     fun flush(): List<AgentEvent> = flushPendingCalls()
+
+    /**
+     * 流结束后取走本轮全部结构化工具调用(完整参数 JSON + callId),供 agent 循环执行与回传。
+     * 取走后解析器内部状态清零,可安全复用于下一轮请求。
+     * 与 [flush] 的卡片事件一一对应:flush 发卡片,drain 喂循环。
+     */
+    fun drainCalls(): List<ToolCallReq> {
+        val out = mutableListOf<ToolCallReq>()
+        for (idx in (pendingIds.keys + pendingNames.keys + pendingArgs.keys).toSortedSet()) {
+            val name = pendingNames[idx]?.toString().orEmpty()
+            if (name.isBlank()) continue
+            out += ToolCallReq(
+                callId = pendingIds[idx]?.takeIf { it.isNotBlank() } ?: ("call-" + idx + "-" + name),
+                name = name,
+                argsJson = pendingArgs[idx]?.toString().orEmpty(),
+            )
+        }
+        pendingIds.clear()
+        pendingNames.clear()
+        pendingArgs.clear()
+        return out
+    }
 
     /* ---------------- Freebuff 原生事件帧 ---------------- */
 
