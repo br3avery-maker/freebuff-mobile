@@ -182,41 +182,37 @@ class ChatViewModel @Inject constructor(
     private val permissionOverridesState: StateFlow<Map<String, ToolPermission>> =
         settings.toolPermissionOverrides.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
-    /** 挂起的确认请求:同一时刻至多一个(CONFIRM 级工具串行执行)。 */
-    private val _pendingConfirmation = MutableStateFlow<com.freebuff.core.model.ToolCallReq?>(null)
+    /** 挂起的确认请求:同一时刻至多一个(CONFIRM 级工具串行执行);deferred 即用户决定,await 真挂起。 */
+    private class PendingConfirm(
+        val req: com.freebuff.core.model.ToolCallReq,
+        val deferred: kotlinx.coroutines.CompletableDeferred<Boolean>,
+    )
+
+    private val _pendingConfirmation = MutableStateFlow<PendingConfirm?>(null)
 
     /** 对话页据此弹「是否允许执行该工具」确认框。 */
-    val pendingConfirmation: StateFlow<com.freebuff.core.model.ToolCallReq?> = _pendingConfirmation.asStateFlow()
+    val pendingConfirmation: StateFlow<com.freebuff.core.model.ToolCallReq?> =
+        _pendingConfirmation.map { it?.req }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     /** 用户批准当前挂起的工具调用:卡片回 running,门闩放行。 */
     fun approvePendingTool() {
-        val req = _pendingConfirmation.value ?: return
-        viewModelScope.launch { upsertToolCardState(streamSessionId ?: req.callId, req.callId, "running") }
-        _grantedCalls.add(req.callId)
+        val p = _pendingConfirmation.value ?: return
+        viewModelScope.launch { upsertToolCardState(streamSessionId ?: return@launch, p.req.callId, "running") }
+        p.deferred.complete(true)
         _pendingConfirmation.value = null
-        _confirmationGate.value = _confirmationGate.value + 1
     }
 
-    /** 用户拒绝当前挂起的工具调用:卡片标红并回传拒绝结果给模型。 */
+    /** 用户拒绝当前挂起的工具调用:卡片标红,拒绝作为执行结果回传给模型。 */
     fun denyPendingTool() {
-        val req = _pendingConfirmation.value ?: return
+        val p = _pendingConfirmation.value ?: return
+        p.deferred.complete(false)
         _pendingConfirmation.value = null
         viewModelScope.launch {
-            val sid = streamSessionId ?: return@launch
-            completeToolCard(sid, req.callId, "(用户拒绝执行该工具)", isError = true)
-            _deniedCalls[req.callId] = com.freebuff.core.model.ToolOutcome("用户拒绝执行该工具;请勿重复调用,可换其他方式或向用户说明。", isError = true)
-            _confirmationGate.value = _confirmationGate.value + 1
+            streamSessionId?.let { sid ->
+                completeToolCard(sid, p.req.callId, "(用户拒绝执行该工具)", isError = true)
+            }
         }
     }
-
-    /** 已批准的调用 id;确认后放行一次,回传结果后移除。 */
-    private val _grantedCalls = mutableSetOf<String>()
-
-    /** 被拒绝调用的回传结果(拒绝也是一种结果,模型需要收到它才能继续)。 */
-    private val _deniedCalls = mutableMapOf<String, com.freebuff.core.model.ToolOutcome>()
-
-    /** 确认流信号:弹窗已决时唤醒 dispatchTool 里的挂起等待。 */
-    private val _confirmationGate = MutableStateFlow(0L)
 
     fun updateInput(v: String) { _chatInput.value = v }
 
@@ -302,7 +298,6 @@ class ChatViewModel @Inject constructor(
                         for (c in calls) {
                             val outcome = dispatchTool(c)
                             completeToolCard(session.id, c.callId, outcome.content, outcome.isError)
-                            _outcomeCache[c.callId] = outcome.content
                             protocol += ChatMessage.toolResult(c.callId, ContextPolicy.compressToolResult(outcome.content))
                         }
                     }
@@ -315,6 +310,8 @@ class ChatViewModel @Inject constructor(
             } finally {
                 if (streamSessionId == session.id) streamSessionId = null
                 _streaming.value = false
+                // 流结束(含被取消)时丢弃未决的确认弹窗,避免残留遮罩
+                _pendingConfirmation.value = null
             }
             // 轮次结束后的记忆提取:独立协程执行 —— 它是额外一次 LLM 调用,
             // 不能让「正在生成」状态与输入框被它拖住(提取失败静默)
@@ -473,14 +470,16 @@ class ChatViewModel @Inject constructor(
             ToolPermission.DENY ->
                 return com.freebuff.core.model.ToolOutcome("该工具已被用户禁用;请勿重复调用,可换其他方式或向用户说明。", isError = true)
             ToolPermission.CONFIRM -> {
-                // 卡片置 waiting(可点击,但弹窗是唯一决定入口);挂起等待,停止对话会取消整个协程
+                // 卡片置 waiting;await 真挂起等用户决定,停止对话(取消协程)会直接中断
                 val sid = streamSessionId
                     ?: return com.freebuff.core.model.ToolOutcome("会话已关闭", isError = true)
                 upsertToolCardState(sid, c.callId, "waiting")
-                _pendingConfirmation.value = c
-                _confirmationGate.first() // 弹窗决定(approve/deny)或流被取消时唤醒
-                _deniedCalls.remove(c.callId)?.let { return it }
-                _grantedCalls.remove(c.callId) // 已批准:放行执行
+                val pending = PendingConfirm(c, kotlinx.coroutines.CompletableDeferred())
+                _pendingConfirmation.value = pending
+                val granted = pending.deferred.await()
+                if (!granted) {
+                    return com.freebuff.core.model.ToolOutcome("用户拒绝执行该工具;请勿重复调用,可换其他方式或向用户说明。", isError = true)
+                }
             }
             ToolPermission.ALLOW -> Unit
         }
@@ -620,7 +619,7 @@ class ChatViewModel @Inject constructor(
                     retry++
                     recordRetryAttempt(sessionId, retry, t.toApiError().userMessage)
                     // 退避等待(指数):期间用户停止则放弃重试
-                    if (!RetryPolicy.waitBackoff(retry) { !_streaming.value || _outcomeCache.isNotEmpty() }) break
+                    if (!RetryPolicy.waitBackoff(retry) { !_streaming.value }) break
                 }
             }
         }
@@ -629,9 +628,6 @@ class ChatViewModel @Inject constructor(
         // join 正常返回(非取消)时才视为完整一轮;用户 stop 会 cancel job → join 抛 CancellationException
         return if (job.isCancelled) null else calls
     }
-
-    /** 已回传的工具结果缓存:重试前若非空说明前轮已有工具产出,直接停止重试(避免上下文自相矛盾)。 */
-    private val _outcomeCache = mutableMapOf<String, String>()
 
     /** 把一次自动重试写进消息:steps 追加「重试 n」步骤,time 位显示尝试进度(流式期间的状态牌,成功后由 finishAgent 落定真实时间)。 */
     private suspend fun recordRetryAttempt(sessionId: String, retry: Int, lastError: String) {
