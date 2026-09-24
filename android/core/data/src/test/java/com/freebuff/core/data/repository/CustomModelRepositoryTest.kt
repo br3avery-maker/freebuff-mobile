@@ -6,6 +6,7 @@ import com.freebuff.core.data.db.MessageEntity
 import com.freebuff.core.data.db.SessionEntity
 import com.freebuff.core.data.db.SessionWithMessages
 import com.freebuff.core.data.db.MemoryEntity
+import com.freebuff.core.data.db.MemoryEntryEntity
 import com.freebuff.core.data.db.SettingEntity
 import com.freebuff.core.data.network.ApiError
 import com.freebuff.core.data.network.ApiResult
@@ -184,6 +185,11 @@ class CustomModelRepositoryTest {
         override suspend fun upsertMemory(memory: MemoryEntity) = unsupported()
         override suspend fun deleteMemory(block: String) = unsupported()
         override suspend fun clearMemories() = unsupported()
+        override suspend fun memoryEntries(userId: String): List<MemoryEntryEntity> = unsupported()
+        override fun observeMemoryEntries(): Flow<List<MemoryEntryEntity>> = flowOf(emptyList())
+        override suspend fun upsertMemoryEntry(entry: MemoryEntryEntity): Long = unsupported()
+        override suspend fun deleteMemoryEntry(id: Long) = unsupported()
+        override suspend fun clearMemoryEntries() = unsupported()
 
         private fun unsupported(): Nothing = throw UnsupportedOperationException("网络测试不应触碰 DAO")
     }

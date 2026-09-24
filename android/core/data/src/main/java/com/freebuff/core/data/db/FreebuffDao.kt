@@ -100,4 +100,20 @@ interface FreebuffDao {
 
     @Query("DELETE FROM memories")
     suspend fun clearMemories()
+
+    // ---------- memory_entries(检索式记忆库:长/短期条目) ----------
+    @Query("SELECT * FROM memory_entries WHERE userId = :userId ORDER BY updatedAt DESC")
+    suspend fun memoryEntries(userId: String): List<MemoryEntryEntity>
+
+    @Query("SELECT * FROM memory_entries ORDER BY updatedAt DESC")
+    fun observeMemoryEntries(): Flow<List<MemoryEntryEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertMemoryEntry(entry: MemoryEntryEntity): Long
+
+    @Query("DELETE FROM memory_entries WHERE id = :id")
+    suspend fun deleteMemoryEntry(id: Long)
+
+    @Query("DELETE FROM memory_entries")
+    suspend fun clearMemoryEntries()
 }

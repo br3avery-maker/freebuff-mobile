@@ -7,6 +7,7 @@ import com.freebuff.core.data.db.MessageEntity
 import com.freebuff.core.data.db.SessionEntity
 import com.freebuff.core.data.db.SessionWithMessages
 import com.freebuff.core.data.db.MemoryEntity
+import com.freebuff.core.data.db.MemoryEntryEntity
 import com.freebuff.core.data.db.SettingEntity
 import com.freebuff.core.data.security.CryptoManager
 import com.freebuff.core.model.SEED_SESSIONS
@@ -392,6 +393,11 @@ class DataMigratorTest {
         override suspend fun upsertMemory(memory: MemoryEntity) { memories[memory.block] = memory }
         override suspend fun deleteMemory(block: String) { memories.remove(block) }
         override suspend fun clearMemories() = memories.clear()
+        override suspend fun memoryEntries(userId: String): List<MemoryEntryEntity> = emptyList()
+        override fun observeMemoryEntries(): Flow<List<MemoryEntryEntity>> = flowOf(emptyList())
+        override suspend fun upsertMemoryEntry(entry: MemoryEntryEntity): Long = 0L
+        override suspend fun deleteMemoryEntry(id: Long) = Unit
+        override suspend fun clearMemoryEntries() = Unit
     }
 
     /** 空实现 DAO:只关心 migrate 返回值,不检查落库。 */
@@ -425,5 +431,10 @@ class DataMigratorTest {
         override suspend fun upsertMemory(memory: MemoryEntity) = Unit
         override suspend fun deleteMemory(block: String) = Unit
         override suspend fun clearMemories() = Unit
+        override suspend fun memoryEntries(userId: String): List<MemoryEntryEntity> = emptyList()
+        override fun observeMemoryEntries(): Flow<List<MemoryEntryEntity>> = flowOf(emptyList())
+        override suspend fun upsertMemoryEntry(entry: MemoryEntryEntity): Long = 0L
+        override suspend fun deleteMemoryEntry(id: Long) = Unit
+        override suspend fun clearMemoryEntries() = Unit
     }
 }

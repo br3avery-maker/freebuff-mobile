@@ -87,6 +87,7 @@ private val TOOL_LABELS: Map<String, String> = mapOf(
     "calculator" to "计算器",
     "current_time" to "当前时间",
     "save_memory" to "保存记忆",
+    "memory_recall" to "检索记忆",
     "end_turn" to "结束回合",
     "ask_user" to "等待输入",
     "suggest_followups" to "推荐后续",
@@ -106,6 +107,7 @@ fun toolGlyph(tool: String): String = when (tool) {
     "read_url", "web_fetch" -> "⌘"
     "github_search_repositories", "github_get_file", "github_get_readme" -> "⌥"
     "save_memory" -> "❖"
+    "memory_recall" -> "❒"
     "write_file", "str_replace", "apply_patch", "propose_write_file", "propose_str_replace" -> "✎"
     "run_terminal_command", "run_file_change_hooks" -> "›_"
     "spawn_agents", "spawn_agent_inline" -> "✷"

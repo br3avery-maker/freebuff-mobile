@@ -2,11 +2,13 @@ package com.freebuff.core.data.db
 
 import androidx.room.Embedded
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import androidx.room.Relation
 import androidx.room.TypeConverter
 import com.freebuff.core.model.ChatMsg
 import com.freebuff.core.model.CustomModel
+import com.freebuff.core.model.MemoryEntry
 import com.freebuff.core.model.MsgStep
 import com.freebuff.core.model.Probe
 import com.freebuff.core.model.Session
@@ -79,6 +81,22 @@ data class MemoryEntity(
     val sort: Long,
 )
 
+/**
+ * 检索式记忆条目表(区别于常驻的 [MemoryEntity] 块):
+ * type 分长期/短期,userId 隔离多用户,按查询相关度检索后作为「工作记忆」注入。
+ */
+@Entity(tableName = "memory_entries", indices = [Index("userId")])
+data class MemoryEntryEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val userId: String,
+    val type: String,
+    val content: String,
+    val sessionId: String,
+    val createdAt: Long,
+    val updatedAt: Long,
+    val hits: Int,
+)
+
 /** 会话 + 消息一对多聚合(Room @Relation)。 */
 data class SessionWithMessages(
     @Embedded val session: SessionEntity,
@@ -110,6 +128,12 @@ fun ChatMsg.toEntity(sessionId: String, sort: Long): MessageEntity = MessageEnti
     ctxRepo = ctxRepo, ctxModel = ctxModel,
     toolsJson = JsonCodec.toolCardsToJson(tools),
 )
+
+fun MemoryEntryEntity.toDomain(): MemoryEntry =
+    MemoryEntry(id, userId, type, content, sessionId, createdAt, updatedAt, hits)
+
+fun MemoryEntry.toEntity(): MemoryEntryEntity =
+    MemoryEntryEntity(id, userId, type, content, sessionId, createdAt, updatedAt, hits)
 
 fun CustomModelEntity.toDomain(): CustomModel = CustomModel(
     id = id, name = name, apiId = apiId, base = base,

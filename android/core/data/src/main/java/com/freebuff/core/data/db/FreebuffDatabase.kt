@@ -9,8 +9,15 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [SessionEntity::class, MessageEntity::class, CustomModelEntity::class, SettingEntity::class, MemoryEntity::class],
-    version = 3,
+    entities = [
+        SessionEntity::class,
+        MessageEntity::class,
+        CustomModelEntity::class,
+        SettingEntity::class,
+        MemoryEntity::class,
+        MemoryEntryEntity::class,
+    ],
+    version = 4,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -41,13 +48,31 @@ abstract class FreebuffDatabase : RoomDatabase() {
             }
         }
 
+        /** v4:memory_entries 表(检索式记忆库:长/短期条目 + user_id 隔离)。 */
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS memory_entries (" +
+                        "id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, " +
+                        "userId TEXT NOT NULL, " +
+                        "type TEXT NOT NULL, " +
+                        "content TEXT NOT NULL, " +
+                        "sessionId TEXT NOT NULL, " +
+                        "createdAt INTEGER NOT NULL, " +
+                        "updatedAt INTEGER NOT NULL, " +
+                        "hits INTEGER NOT NULL)",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_memory_entries_userId ON memory_entries(userId)")
+            }
+        }
+
         fun get(context: Context): FreebuffDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext,
                 FreebuffDatabase::class.java,
                 "freebuff.db",
             )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build().also { instance = it }
         }
     }

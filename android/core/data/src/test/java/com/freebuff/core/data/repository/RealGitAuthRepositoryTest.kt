@@ -6,6 +6,7 @@ import com.freebuff.core.data.db.MessageEntity
 import com.freebuff.core.data.db.SessionEntity
 import com.freebuff.core.data.db.SessionWithMessages
 import com.freebuff.core.data.db.MemoryEntity
+import com.freebuff.core.data.db.MemoryEntryEntity
 import com.freebuff.core.data.db.SettingEntity
 import com.freebuff.core.data.network.ApiError
 import com.freebuff.core.data.network.ApiResult
@@ -194,6 +195,11 @@ class RealGitAuthRepositoryTest {
         override suspend fun upsertMemory(memory: MemoryEntity) = Unit
         override suspend fun deleteMemory(block: String) = Unit
         override suspend fun clearMemories() = Unit
+        override suspend fun memoryEntries(userId: String): List<MemoryEntryEntity> = emptyList()
+        override fun observeMemoryEntries(): Flow<List<MemoryEntryEntity>> = flowOf(emptyList())
+        override suspend fun upsertMemoryEntry(entry: MemoryEntryEntity): Long = 0L
+        override suspend fun deleteMemoryEntry(id: Long) = Unit
+        override suspend fun clearMemoryEntries() = Unit
 
         override suspend fun allSettings(): List<SettingEntity> = store.map { SettingEntity(it.key, it.value) }
         override fun observeSessionsWithMessages(): Flow<List<SessionWithMessages>> = flowOf(emptyList())

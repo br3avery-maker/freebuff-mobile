@@ -7,6 +7,7 @@ import com.freebuff.core.model.ContextPolicy
 import com.freebuff.core.model.ContextStats
 import com.freebuff.core.model.MemoryBlock
 import com.freebuff.core.model.MemoryCodec
+import com.freebuff.core.model.MemoryStore
 import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -37,12 +38,16 @@ class ContextBuilder @Inject constructor() {
      * @param session 当前会话消息(按序)
      * @param budget token 预算
      * @param summarize 摘要压缩执行器;null 表示禁用 LLM 压缩(只用提取式回退)
+     * @param workingMemory 按当前问题检索到的记忆(工作记忆),注入 system prompt
+     * @param userId 记忆库用户标识(告知模型 memory_recall 该传哪个 user_id)
      */
     suspend fun build(
         memoryBlocks: List<MemoryBlock>,
         session: List<ChatMsg>,
         budget: ContextBudget,
         summarize: (suspend (List<ContextTurn>) -> String)? = null,
+        workingMemory: String = "",
+        userId: String = MemoryStore.LOCAL_USER_ID,
     ): Built {
         var systemTokens = 0
         var truncatedToolResults = 0
@@ -55,9 +60,14 @@ class ContextBuilder @Inject constructor() {
         val memoryPrompt = MemoryCodec.toPrompt(MemoryCodec.enforceLimits(memoryBlocks))
         val systemText = buildString {
             append(memoryPrompt)
+            if (workingMemory.isNotBlank()) {
+                append("\n\n## 工作记忆(按当前问题从记忆库检索;与当前问题无关则忽略)\n")
+                append(workingMemory)
+            }
             append("\n\n你是 Freebuff 助手。可使用提供的工具获取实时信息(联网搜索/GitHub/计算/时间);")
             append("回答保持简洁,工具结果仅供你参考加工。")
-            append("\n你可以用 save_memory 工具更新记忆块(persona=你的身份,user=关于用户,project=任务焦点)。")
+            append("\n记忆工具:memory_recall 按需检索历史记忆(用户偏好/关键事实/任务进度),save_memory 更新核心记忆块(persona=你的身份,user=关于用户,project=任务焦点)。")
+            append("当前用户 user_id=").append(userId).append('。')
         }
         parts += ChatMessage.text("system", systemText)
         systemTokens = ContextPolicy.estimateTokens(systemText)

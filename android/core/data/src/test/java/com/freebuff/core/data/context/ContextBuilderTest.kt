@@ -33,6 +33,28 @@ class ContextBuilderTest {
     }
 
     @Test
+    fun `工作记忆注入 system 并告知 user_id 与检索工具`() = runTest {
+        val built = ContextBuilder().build(
+            memoryBlocks = listOf(MemoryBlock("user", "偏好中文")),
+            session = listOf(msg("user", "我上次说过什么"), msg("agent", "稍等")),
+            budget = ContextBudget(contextWindow = 32000),
+            workingMemory = "1. [长期] 用户偏好简洁回复",
+        )
+        val system = built.messages[0].content
+        assertTrue("应含工作记忆小节", system.contains("## 工作记忆"))
+        assertTrue("应含检索到的条目", system.contains("用户偏好简洁回复"))
+        assertTrue("应提示 memory_recall 工具", system.contains("memory_recall"))
+        assertTrue("应声明 user_id", system.contains("user_id=local"))
+        // 未检索到时不应出现空小节
+        val plain = ContextBuilder().build(
+            memoryBlocks = emptyList(),
+            session = listOf(msg("user", "你好")),
+            budget = ContextBudget(contextWindow = 32000),
+        )
+        assertTrue(!plain.messages[0].content.contains("## 工作记忆"))
+    }
+
+    @Test
     fun `超长工具结果被机械压缩`() = runTest {
         val longOutput = "y".repeat(8000) // ≈2400 tokens,超过单条 1200 上限
         val built = ContextBuilder().build(

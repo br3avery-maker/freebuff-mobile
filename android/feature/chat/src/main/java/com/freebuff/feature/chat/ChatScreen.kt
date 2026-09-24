@@ -91,6 +91,11 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
                 }
             }
         }
+        // 上下文压缩提示:早期消息已被摘要替代,模型看到的仍是连续上下文
+        val stats by viewModel.contextStats.collectAsState()
+        stats?.takeIf { it.didCompact }?.let { st ->
+            ContextCompactedHint(compacted = st.compactedTurns, summaryTokens = st.summaryTokens)
+        }
         Composer(
             input = viewModel.chatInput.collectAsState().value,
             streaming = streaming,
@@ -101,6 +106,26 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
         )
         // 切换会话时清空输入框,避免把 A 会话草稿发进 B 会话
         LaunchedEffect(session?.id) { viewModel.clearInputIfStale() }
+    }
+}
+
+/**
+ * 上下文压缩提示条:告诉用户「早期消息已被摘要替代」,避免以为模型失忆。
+ * 统计来自最近一轮 ContextBuilder 构建(docs/context-engineering.md §2/§3)。
+ */
+@Composable
+private fun ContextCompactedHint(compacted: Int, summaryTokens: Int) {
+    val t = LocalTokens.current
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("⛶ ", color = t.accent, fontSize = 11.sp)
+        Text(
+            "已压缩早期上下文 · $compacted 条消息 → 摘要(约 $summaryTokens token)",
+            color = t.text3,
+            fontSize = 11.sp,
+        )
     }
 }
 

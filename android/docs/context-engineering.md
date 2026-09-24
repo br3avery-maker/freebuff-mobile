@@ -32,6 +32,7 @@ sendMessage(text)
 | 机制 | 借鉴来源 | 本工程落点 |
 |---|---|---|
 | 核心记忆块(命名块常驻 system,agent 自编辑) | Letta/MemGPT core memory blocks | `MemoryBlock`(persona/user/project)+ `save_memory` 工具 + Room `memories` 表 |
+| 检索式记忆(按查询 Top K 注入 + 工具化召回) | MemGPT archival memory / OpenAI memory 工具化 | `MemoryEntry` + `MemoryEntryRepository` + `memory_recall` 工具 + Room `memory_entries` 表 |
 | 会话摘要压缩(超限把早期消息换摘要) | LibreChat conversation summarization;Cline auto-compact | `ContextBuilder.build` 裁剪 + `llmSummarizer`(非流式摘要调用) |
 | 摘要失败的降级 | LibreChat 提取式回退 | `ContextPolicy.extractiveSummary`(首条用户请求 + 最新进展) |
 | 工具结果有损压缩(保留首尾) | Cline 机械压缩思想 | `ContextPolicy.compressToolResult`(单条 1200 token 上限) |
@@ -53,4 +54,63 @@ sendMessage(text)
 - `ContextPolicyTest`:估算/窗口解析/压缩/预算
 - `MemoryTest`:编解码往返/prompt 渲染/限额/save_memory 参数/能力过滤
 - `MemoryRepositoryTest`:播种/覆盖/追加压缩/清空(内存假 DAO)
-- `ContextBuilderTest`:记忆注入/工具结果压缩/裁剪+摘要/LLM 摘要与失败回退/空会话
+- `ContextBuilderTest`:记忆注入/工作记忆注入/工具结果压缩/裁剪+摘要/LLM 摘要与失败回退/空会话
+- `MemoryEntryTest`:分词/相关度排序/类型归一化/memory_recall 参数/注入格式/提取解析容错
+- `MemoryEntryRepositoryTest`:写入可检索/去重刷新/类型过滤/热度累加/容量淘汰/用户隔离
+
+## 5. 检索式记忆库(记忆即工具)
+
+核心块(persona/user/project)适合「少量、常驻、模型自编辑」的信息;大量历史信息(用户偏好、关键事实、
+任务进度)走检索路径——**记忆同时是一个工具**:每次 LLM 调用前按当前问题检索 Top K 注入为「工作记忆」,
+模型也可主动调用 `memory_recall` 拉取。
+
+```
+用户输入 ─┬─► MemoryEntryRepository.search(query, top_k=5, memory_type?)
+          │        └─ MemoryRetrieval.rank(词法相关度 + 时间衰减 + 命中热度)
+          ├─► ContextBuilder.build(workingMemory=…) → system「## 工作记忆」
+          ├─► 模型可调 memory_recall(user_id, query, top_k, memory_type) → ❒ 检索记忆 卡片
+          └─► 轮次结束:extractTurnMemories() → 模型提取 JSON → memory_entries(long_term/short_term)
+```
+
+### 5.1 存储(`memory_entries`,DB v4)
+
+`id / userId / type / content / sessionId / createdAt / updatedAt / hits`:
+
+- `user_id` 隔离多用户记忆;访客模式固定 `local`(system prompt 中告知模型应传的 user_id)
+- 写入去重:同一 user 下内容相同只刷新时间与类型;过短内容拒收
+- 容量:单用户超过 500 条淘汰最旧条目(短期记忆优先出局)
+
+### 5.2 检索(无嵌入依赖,端侧可离线)
+
+- 分词:CJK 连续串切 bigram(免分词近似)+ 整串特征;拉丁/数字按词小写
+- 相关度 = TF 对数加权 / 长度归一 × 命中率缩放 + 子串加成
+- 排序 = 相关度 + 时间衰减(长期半衰期 30 天、短期 2 天)+ 命中热度
+- **有查询词时只返回真正有特征重叠的条目**(无关条目不得靠时间/热度混入);查询无有效特征时退化为「最近记忆」
+- 自动注入 `bumpHits=false`(不写库);模型显式检索才累加热度
+- 已知限制:词法检索无法跨语言(中文查询 ↔ 英文记忆)命中——工具路径零命中时回退「最近记忆」
+  并在结果里注明「无直接匹配」;提取提示词要求 content 与用户语言一致,避免长期累积跨语言记忆
+
+### 5.3 工具参数(`memory_recall`)
+
+| 参数 | 必填 | 说明 |
+|---|---|---|
+| `user_id` | ✓ | 记忆命名空间;非本机 id 无命中时回退本机记忆并在结果中注明 |
+| `query` | ✓ | 当前需要响应的用户输入/查询词 |
+| `top_k` | – | 默认 5,上限 20 |
+| `memory_type` | – | `long_term`(偏好/事实)/ `short_term`(任务进度);兼容 long/short/长期/短期 |
+
+注入与回传格式同为 `N. [长期|短期] 内容`;无命中回「记忆库中没有与「…」相关的条目」,避免模型臆造。
+
+### 5.4 关键规则
+
+- 记忆类工具随设置页「上下文记忆」开关整体开关(`DefaultTools.forCapabilities`):关闭时 `save_memory`
+  与 `memory_recall` 都不下发,块与工作记忆也不注入
+- 自动提取失败静默(不打断对话);单轮最多 5 条、单条 ≤300 字;提取 JSON 容错(剥围栏/夹带说明/纯字符串元素)
+- 工作记忆注入在 system prompt 内,受同一 token 预算约束;检索为空时不产生空小节
+
+### 5.5 文件
+
+- `core/model/MemoryEntry.kt`(类型、参数编解码、检索打分、提取解析;纯函数)
+- `core/data/repository/MemoryEntryRepository.kt`(去重写入、检索、热度、淘汰)
+- `core/data/context/ContextBuilder.kt`(`workingMemory` 注入 + user_id 声明)
+- `feature/chat/ChatViewModel.kt`(`dispatchTool` 分派 / `executeMemoryRecall` / `extractTurnMemories`)

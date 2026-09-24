@@ -103,15 +103,28 @@ object DefaultTools {
                 AgentTool.Param("replace", "boolean", "true=覆盖块内容(默认),false=追加", required = false),
             ),
         ),
+        AgentTool(
+            name = "memory_recall",
+            description = "检索记忆库:按 user_id 与 query 返回最相关的历史记忆条目(Top K,默认 5)。适合在回答涉及用户偏好、过往约定、任务进度、以前提供过的事实之前调用;memory_type 可只看长期(偏好/事实)或短期(任务进度)。",
+            params = listOf(
+                AgentTool.Param("user_id", "string", "用户标识,用于隔离不同用户的记忆(必填)"),
+                AgentTool.Param("query", "string", "当前需要响应的用户输入或查询词"),
+                AgentTool.Param("top_k", "integer", "检索条数,默认 5,最大 20", required = false),
+                AgentTool.Param("memory_type", "string", "类型过滤:long_term(长期偏好/事实)/ short_term(任务进度)", required = false),
+            ),
+        ),
     )
+
+    /** 记忆能力相关工具:设置页「上下文记忆」关闭时整体移除(模型不应看到不可用的工具)。 */
+    private val MEMORY_TOOLS = setOf("save_memory", "memory_recall")
 
     /** 序列化为 OpenAI 兼容 `tools` 数组字符串(直接放进请求体)。 */
     fun toJsonArrayString(tools: List<AgentTool> = ALL): String =
         JSONArray().apply { tools.forEach { put(it.toJsonObject()) } }.toString()
 
-    /** 按开关过滤的工具集:记忆关闭时移除 save_memory(模型不应看到不可用的工具)。 */
+    /** 按开关过滤的工具集:记忆关闭时移除记忆类工具(save_memory / memory_recall)。 */
     fun forCapabilities(memory: Boolean): List<AgentTool> =
-        if (memory) ALL else ALL.filter { it.name != "save_memory" }
+        if (memory) ALL else ALL.filter { it.name !in MEMORY_TOOLS }
 }
 
 /** assistant 发起的一笔工具调用(循环回传时组装 assistant 消息用)。 */

@@ -12,6 +12,7 @@ import com.freebuff.core.data.network.toApiError
 import com.freebuff.core.data.repository.CatalogSource
 import com.freebuff.core.data.repository.ChatRepository
 import com.freebuff.core.data.repository.CustomModelRepository
+import com.freebuff.core.data.repository.MemoryEntryRepository
 import com.freebuff.core.data.repository.MemoryRepository
 import com.freebuff.core.data.repository.ModelCatalogRepository
 import com.freebuff.core.data.repository.SessionRepository
@@ -21,9 +22,13 @@ import com.freebuff.core.model.ChatMsg
 import com.freebuff.core.model.ChatTarget
 import com.freebuff.core.model.ContextBudget
 import com.freebuff.core.model.ContextPolicy
+import com.freebuff.core.model.ContextStats
 import com.freebuff.core.model.DefaultTools
 import com.freebuff.core.model.CustomModel
 import com.freebuff.core.model.MemoryCodec
+import com.freebuff.core.model.MemoryExtraction
+import com.freebuff.core.model.MemoryRecallCodec
+import com.freebuff.core.model.MemoryStore
 import com.freebuff.core.model.MsgStep
 import com.freebuff.core.model.OfficialModel
 import com.freebuff.core.model.Session
@@ -61,6 +66,7 @@ class ChatViewModel @Inject constructor(
     private val chatRepo: ChatRepository,
     private val tools: com.freebuff.core.data.tools.ToolExecutors,
     private val memoryRepo: MemoryRepository,
+    private val memoryEntryRepo: MemoryEntryRepository,
     private val contextBuilder: ContextBuilder,
     private val navigator: AppNavigator,
     @ApplicationContext private val context: Context,
@@ -127,6 +133,11 @@ class ChatViewModel @Inject constructor(
     private val _streaming = MutableStateFlow(false)
     val streaming: StateFlow<Boolean> = _streaming.asStateFlow()
 
+    private val _contextStats = MutableStateFlow<ContextStats?>(null)
+
+    /** 最近一轮上下文构建统计:会话页据此提示「已压缩早期上下文」(见 docs/context-engineering.md §3)。 */
+    val contextStats: StateFlow<ContextStats?> = _contextStats.asStateFlow()
+
     private var streamJob: Job? = null
 
     /** 当前流式回复所属会话;停止时按它收尾,避免会话切换后落到错误会话。 */
@@ -135,6 +146,13 @@ class ChatViewModel @Inject constructor(
     /** 工具调用单次对话最多执行的轮数(模型→工具→模型 记一轮)。 */
     private companion object {
         const val MAX_TOOL_ROUNDS = 6
+
+        /** 记忆提取提示词:严格 JSON,便于端侧解析入库。 */
+        const val EXTRACT_PROMPT = """从本轮用户消息中提取值得长期记住的信息:用户偏好与习惯、关键事实与约定、任务进度。
+只记用户明确说出或确认过的内容;绝不要记录助手自己的推测、道歉、工具调用过程,也不要记「无记录/为空/未能找到」这类状态描述。
+用户本轮没有提供新信息时,输出 []。
+用 JSON 数组输出,元素形如 {"type":"long_term"|"short_term","content":"..."};偏好与事实用 long_term,任务进度用 short_term。
+每条 content 写成一句简短陈述,且与用户语言一致(中文对话用中文),最多 5 条;没有值得记的就输出 []。只输出 JSON,不要解释。"""
     }
 
     /** 工具开关(设置页「工具调用」):开启时请求携带工具定义,模型可触发 function calling。 */
@@ -151,7 +169,7 @@ class ChatViewModel @Inject constructor(
     private val memoryEnabled: Boolean
         get() = memoryEnabledState.value
 
-    /** 当前能力对应的工具集(记忆关闭时不暴露 save_memory)。 */
+    /** 当前能力对应的工具集(记忆关闭时不暴露 save_memory / memory_recall)。 */
     private fun activeTools(): List<com.freebuff.core.model.AgentTool> =
         com.freebuff.core.model.DefaultTools.forCapabilities(memory = memoryEnabled)
 
@@ -165,6 +183,7 @@ class ChatViewModel @Inject constructor(
         if (cur != inputOwnerSession) {
             _chatInput.value = ""
             inputOwnerSession = cur
+            _contextStats.value = null // 统计属于上一个会话,切换后不再展示
         }
     }
 
@@ -236,7 +255,7 @@ class ChatViewModel @Inject constructor(
                         // 执行工具;结果写入工具卡片(UI)+ 压缩后进入协议消息(下一轮请求)
                         protocol += ChatMessage.assistantWithCalls(roundText.toString(), calls)
                         for (c in calls) {
-                            val outcome = if (c.name == "save_memory") executeSaveMemory(c) else tools.execute(c)
+                            val outcome = dispatchTool(c)
                             completeToolCard(session.id, c.callId, outcome.content, outcome.isError)
                             protocol += ChatMessage.toolResult(c.callId, ContextPolicy.compressToolResult(outcome.content))
                         }
@@ -251,6 +270,9 @@ class ChatViewModel @Inject constructor(
                 if (streamSessionId == session.id) streamSessionId = null
                 _streaming.value = false
             }
+            // 轮次结束后的记忆提取:独立协程执行 —— 它是额外一次 LLM 调用,
+            // 不能让「正在生成」状态与输入框被它拖住(提取失败静默)
+            viewModelScope.launch { extractTurnMemories(session.id, target) }
         }
     }
 
@@ -339,12 +361,25 @@ class ChatViewModel @Inject constructor(
         val s = sessionRepo.get(sessionId)
         val msgs = s?.messages.orEmpty().dropLast(1) // 最后一条是占位 agent 消息,不进上下文
         val budget = ContextBudget(contextWindow = ContextPolicy.parseCtxWindow(target.ctxWindow))
+        // 工作记忆:按最新用户输入检索 Top K 历史条目,注入 system prompt(检索失败不影响对话)
+        val workingMemory = if (memoryEnabled) {
+            val query = msgs.lastOrNull { it.role == "user" }?.text.orEmpty()
+            if (query.isBlank()) ""
+            else runCatching {
+                MemoryRecallCodec.formatForPrompt(
+                    memoryEntryRepo.search(query, topK = MemoryStore.DEFAULT_TOP_K, bumpHits = false),
+                )
+            }.getOrDefault("")
+        } else ""
         val built = contextBuilder.build(
             memoryBlocks = if (memoryEnabled) memoryRepo.load() else emptyList(),
             session = msgs,
             budget = budget,
             summarize = llmSummarizer(target),
+            workingMemory = workingMemory,
+            userId = MemoryStore.LOCAL_USER_ID,
         )
+        _contextStats.value = built.stats
         val out = built.messages.toMutableList()
         if (ctxRepo.isNotBlank()) {
             // 任务向导携带的仓库上下文:插在 system 之后,不落库
@@ -380,6 +415,77 @@ class ChatViewModel @Inject constructor(
                 if (ev is com.freebuff.core.model.AgentEvent.Text) sb.append(ev.chunk)
             }
             sb.toString().trim()
+        }
+    }
+
+    /** 端侧工具分派:记忆类工具走本地仓库(save_memory 自编辑块 / memory_recall 检索),其余交给 ToolExecutors。 */
+    private suspend fun dispatchTool(c: com.freebuff.core.model.ToolCallReq): com.freebuff.core.model.ToolOutcome =
+        when (c.name) {
+            "save_memory" -> executeSaveMemory(c)
+            "memory_recall" -> executeMemoryRecall(c)
+            else -> tools.execute(c)
+        }
+
+    /**
+     * memory_recall 工具端侧执行:按 user_id/query/top_k/memory_type 检索记忆库。
+     * 参数缺失或非法时回传明确错误(模型可修正后重试);非本机 user_id 命中为空时回退本机记忆。
+     */
+    private suspend fun executeMemoryRecall(c: com.freebuff.core.model.ToolCallReq): com.freebuff.core.model.ToolOutcome {
+        val a = MemoryRecallCodec.parse(c.argsJson)
+        if (a.userId.isBlank()) return com.freebuff.core.model.ToolOutcome("检索失败:缺少 user_id 参数", isError = true)
+        if (a.query.isBlank()) return com.freebuff.core.model.ToolOutcome("检索失败:缺少 query 参数", isError = true)
+        return try {
+            var hits = memoryEntryRepo.search(a.query, a.topK, a.memoryType, userId = a.userId)
+            var note = ""
+            if (hits.isEmpty() && a.userId != MemoryStore.LOCAL_USER_ID) {
+                // 访客模式单用户:模型传了别的 user_id 时回退本机记忆,避免检索永远为空
+                hits = memoryEntryRepo.search(a.query, a.topK, a.memoryType, userId = MemoryStore.LOCAL_USER_ID)
+                if (hits.isNotEmpty()) note = "\n(user_id=${a.userId} 无记录,已回退本机记忆)"
+            }
+            if (hits.isEmpty()) {
+                // 词法检索也可能因说法/语言差异(如中文查询 ↔ 英文记忆)零命中:
+                // 此时给「最近记忆」兜底并明确标注不是直接匹配,避免模型误以为记忆库为空
+                hits = memoryEntryRepo.search("", a.topK, a.memoryType, userId = MemoryStore.LOCAL_USER_ID, bumpHits = false)
+                if (hits.isNotEmpty()) note = "\n(无直接匹配,以下为最近记忆,引用时请说明这是推测)"
+            }
+            com.freebuff.core.model.ToolOutcome(MemoryRecallCodec.formatResult(a.userId, a.query, hits) + note)
+        } catch (e: Exception) {
+            com.freebuff.core.model.ToolOutcome("检索记忆失败:" + (e.message ?: e::class.java.simpleName), isError = true)
+        }
+    }
+
+    /**
+     * 轮次结束后的记忆提取(工作流第 3 步):让模型抽取本轮值得长期保留的信息,
+     * 按 long_term/short_term 分类入库,供后续检索注入。失败静默,不影响对话。
+     */
+    private suspend fun extractTurnMemories(sessionId: String, target: ChatTarget) {
+        if (!memoryEnabled || !target.isConfigured) return
+        try {
+            val s = sessionRepo.get(sessionId) ?: return
+            val user = s.messages.lastOrNull { it.role == "user" } ?: return
+            val agent = s.messages.lastOrNull { it.role == "agent" } ?: return
+            if (user.text.isBlank() || agent.text.isBlank()) return
+            if (agent.text.startsWith("⚠")) return // 失败的一轮没有可提信息(错误文案不作记忆源)
+            val sb = StringBuilder()
+            chatRepo.chatStream(
+                endpoint = target.endpoint,
+                model = target.model,
+                apiKey = target.apiKey,
+                headers = target.headers,
+                skipTLS = target.skipTLS,
+                history = listOf(
+                    ChatMessage.text("system", EXTRACT_PROMPT),
+                    ChatMessage.text("user", "用户:" + user.text.take(2000) + "\n助手:" + agent.text.take(3000)),
+                ),
+            ).collect { ev -> if (ev is AgentEvent.Text) sb.append(ev.chunk) }
+            val items = MemoryExtraction.parse(sb.toString())
+            if (items.isNotEmpty()) {
+                memoryEntryRepo.addExtracted(items, sessionId = sessionId, userId = MemoryStore.LOCAL_USER_ID)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            // 提取失败不影响本轮对话
         }
     }
 

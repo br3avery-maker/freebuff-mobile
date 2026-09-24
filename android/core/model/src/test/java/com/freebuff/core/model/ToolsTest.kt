@@ -47,4 +47,22 @@ class ToolsTest {
         assertEquals("function", arr.getJSONObject(0).getString("type"))
         assertEquals("web_search", arr.getJSONObject(0).getJSONObject("function").getString("name"))
     }
+
+    @Test
+    fun `记忆工具包含保存与检索 关闭记忆后整体移除`() {
+        val names = DefaultTools.ALL.map { it.name }
+        assertTrue(names.containsAll(listOf("save_memory", "memory_recall")))
+
+        val recall = DefaultTools.ALL.first { it.name == "memory_recall" }
+        assertEquals(listOf("user_id", "query", "top_k", "memory_type"), recall.params.map { it.name })
+        val params = recall.toJsonObject().getJSONObject("function").getJSONObject("parameters")
+        val required = params.getJSONArray("required")
+        assertEquals("仅 user_id 与 query 必填", 2, required.length())
+        assertEquals("user_id", required.getString(0))
+        assertEquals("query", required.getString(1))
+
+        val off = DefaultTools.forCapabilities(memory = false).map { it.name }
+        assertTrue("关闭记忆后不应暴露记忆工具", off.none { it == "save_memory" || it == "memory_recall" })
+        assertTrue("关闭记忆后其他工具保留", off.contains("web_search"))
+    }
 }

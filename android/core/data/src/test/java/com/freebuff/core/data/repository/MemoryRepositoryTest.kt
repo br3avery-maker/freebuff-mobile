@@ -3,6 +3,7 @@ package com.freebuff.core.data.repository
 import com.freebuff.core.data.db.CustomModelEntity
 import com.freebuff.core.data.db.FreebuffDao
 import com.freebuff.core.data.db.MemoryEntity
+import com.freebuff.core.data.db.MemoryEntryEntity
 import com.freebuff.core.data.db.MessageEntity
 import com.freebuff.core.data.db.SessionEntity
 import com.freebuff.core.data.db.SessionWithMessages
@@ -26,6 +27,25 @@ class MemoryRepositoryTest {
         override suspend fun upsertMemory(memory: MemoryEntity) { memories[memory.block] = memory }
         override suspend fun deleteMemory(block: String) { memories.remove(block) }
         override suspend fun clearMemories() = memories.clear()
+
+        // 检索式记忆库(内存模拟):id 自增、按 userId 过滤、updatedAt 降序
+        val entries = linkedMapOf<Long, MemoryEntryEntity>()
+        private var nextEntryId = 1L
+
+        override suspend fun memoryEntries(userId: String): List<MemoryEntryEntity> =
+            entries.values.filter { it.userId == userId }.sortedByDescending { it.updatedAt }
+
+        override fun observeMemoryEntries(): Flow<List<MemoryEntryEntity>> =
+            flowOf(entries.values.sortedByDescending { it.updatedAt })
+
+        override suspend fun upsertMemoryEntry(entry: MemoryEntryEntity): Long {
+            val id = if (entry.id > 0) entry.id else nextEntryId++
+            entries[id] = entry.copy(id = id)
+            return id
+        }
+
+        override suspend fun deleteMemoryEntry(id: Long) { entries.remove(id) }
+        override suspend fun clearMemoryEntries() = entries.clear()
 
         override fun observeSessionsWithMessages(): Flow<List<SessionWithMessages>> = flowOf(emptyList())
         override suspend fun sessionWithMessages(id: String): SessionWithMessages? = null
