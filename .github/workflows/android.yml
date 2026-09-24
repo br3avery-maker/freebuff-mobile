@@ -33,10 +33,10 @@ jobs:
         working-directory: android
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
@@ -47,8 +47,10 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
+      # v5 = Node 24(消弭弃用告警);不升 v6:其缓存被抽为专有组件 gradle-actions-caching,
+      # 升级即视为接受 Gradle 的 Terms of Use,对开源仓库不合适(v4 缓存仍是 MIT 行为)
       - name: Set up Gradle (dependency cache)
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v5
 
       # --stacktrace:失败时直接给出仓库/依赖级别的真实原因, 不用再补一次只能看个结论的构建
       - name: Unit tests (pure JVM + MockWebServer)
@@ -61,7 +63,7 @@ jobs:
         run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
 
       - name: Upload release APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: app-release
           path: android/app/build/outputs/apk/release/app-release.apk
