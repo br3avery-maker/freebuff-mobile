@@ -101,6 +101,15 @@ object Subagent {
         return DefaultTools.ALL.filter { it.name in allow }
     }
 
+    /**
+     * 占位分派回填(P0 收敛为协议层,执行引擎未上线):主循环识别到 spawn_subagent 调用时
+     * 不执行、不弹权限确认,直接回填本说明 —— 无副作用,同时让模型提前熟悉该工具的调用形态,
+     * P1 执行引擎上线后无缝切换,无需改提示词。
+     */
+    fun comingSoonMessage(): String =
+        "spawn_subagent 尚未上线:本次调用未执行,子代理功能正在开发中。请直接基于当前上下文完成该子任务;" +
+            "如需外部信息,可自行使用 web_search / web_fetch 分步完成。"
+
     /** spawn_subagent 参数缺失/非法时给主模型的可修正错误文案。 */
     fun invalidArgsMessage(argsJson: String): String =
         "spawn_subagent 参数无效(需要 agent_type=$TYPE_RESEARCHER|$TYPE_CODE_READER|$TYPE_ANALYST 与非空 task)。原始参数:${argsJson.take(200)}"

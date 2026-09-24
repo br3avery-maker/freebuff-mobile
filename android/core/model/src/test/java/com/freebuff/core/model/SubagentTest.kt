@@ -74,6 +74,14 @@ class SubagentTest {
     }
 
     @Test
+    fun `占位文案说明未执行并给出替代路径`() {
+        val m = Subagent.comingSoonMessage()
+        assertTrue(m.contains("尚未上线"))
+        assertTrue(m.contains("未执行"))
+        assertTrue(m.contains("web_search"))
+    }
+
+    @Test
     fun `错误文案含原始参数截断`() {
         val msg = Subagent.invalidArgsMessage("""{"agent_type":"x"}""")
         assertTrue(msg.contains("agent_type"))

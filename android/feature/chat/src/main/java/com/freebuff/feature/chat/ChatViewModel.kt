@@ -33,6 +33,7 @@ import com.freebuff.core.model.MemoryStore
 import com.freebuff.core.model.MsgStep
 import com.freebuff.core.model.OfficialModel
 import com.freebuff.core.model.Session
+import com.freebuff.core.model.Subagent
 import com.freebuff.core.model.ToolCard
 import com.freebuff.core.model.ToolPermission
 import com.freebuff.core.model.ToolPermissions
@@ -40,6 +41,7 @@ import com.freebuff.core.model.fmtT
 import com.freebuff.core.model.mergedModelList
 import com.freebuff.core.model.uid
 import com.freebuff.core.ui.navigation.AppNavigator
+import android.util.Log
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -150,7 +152,12 @@ class ChatViewModel @Inject constructor(
 
     /** 工具调用单次对话最多执行的轮数(模型→工具→模型 记一轮)。 */
     private companion object {
+        const val TAG = "ChatViewModel"
+
         const val MAX_TOOL_ROUNDS = 6
+
+        /** 诊断日志开关:排查「后段消息不落库」这类流式写库时序问题时打开,定位后可关。 */
+        const val LOG_DB_TRACE = true
 
         /** 记忆提取提示词:严格 JSON,便于端侧解析入库。 */
         const val EXTRACT_PROMPT = """从本轮用户消息中提取值得长期记住的信息:用户偏好与习惯、关键事实与约定、任务进度。
@@ -273,61 +280,82 @@ class ChatViewModel @Inject constructor(
             inputOwnerSession = session.id
             sessionRepo.appendMessages(session.id, listOf(userMsg, agentMsg))
             autoTitle(session.id, text)
-            _streaming.value = true
-            streamSessionId = session.id
-            try {
-                if (!target.isConfigured) {
-                    updateAgentText(session.id, "⚠ 尚未配置官方网关地址\n\n当前为演示构建,请在 app 模块的 buildConfigField 配置 DEFAULT_GATEWAY_BASE_URL,或改用自定义模型。")
-                } else {
-                    // agent 循环:每轮由 ContextBuilder 重建上下文(记忆+预算),模型可请求工具(最多 MAX_TOOL_ROUNDS 轮)
-                    var round = 0
-                    val protocol = mutableListOf<ChatMessage>() // 跨轮累积:assistant(tool_calls)+tool 结果(严格协议)
-                    while (true) {
-                        val roundText = StringBuilder() // 本轮流式输出的文本(回传时作为 assistant content)
-                        val base = buildHistory(session.id, ctxRepo, target)
-                        val calls = runStreamRound(
-                            session.id, target, base + protocol,
-                            toolsJson = if (toolsEnabled) DefaultTools.toJsonArrayString(activeTools()) else "",
-                            textSink = roundText,
-                        ) ?: break // 用户停止
-                        // 流结束:若有工具调用且未超轮次,执行并回传,继续下一轮
-                        if (calls.isEmpty() || !toolsEnabled || round >= MAX_TOOL_ROUNDS) {
-                            if (calls.isNotEmpty() && round >= MAX_TOOL_ROUNDS) {
-                                appendAgentText(session.id, "\n\n(工具调用轮次已达上限 $MAX_TOOL_ROUNDS,停止继续执行)")
+            // 整个对话操作包进一个可取消子协程,句柄存进 streamJob:
+            // stopStreaming 取消它时,LLM 摘要压缩/上下文构建/重试退避等所有阶段一并中断 ——
+            // 只取消单个流式 Job 时,用户停止后操作可能仍在后台继续写库(僵尸协程),
+            // 把后续答案写进下一次发送的占位消息(即「轮次停止后 agent 消息缺失」的根因)
+            val opJob = launch {
+                if (LOG_DB_TRACE) Log.i(TAG, "op begin sid=${session.id.takeLast(6)} msg=${agentMsg.id.takeLast(6)}")
+                _streaming.value = true
+                try {
+                    if (!target.isConfigured) {
+                        updateAgentText(session.id, "⚠ 尚未配置官方网关地址\n\n当前为演示构建,请在 app 模块的 buildConfigField 配置 DEFAULT_GATEWAY_BASE_URL,或改用自定义模型。")
+                    } else {
+                        // agent 循环:每轮由 ContextBuilder 重建上下文(记忆+预算),模型可请求工具(最多 MAX_TOOL_ROUNDS 轮)
+                        var round = 0
+                        val protocol = mutableListOf<ChatMessage>() // 跨轮累积:assistant(tool_calls)+tool 结果(严格协议)
+                        while (true) {
+                            val roundText = StringBuilder() // 本轮流式输出的文本(回传时作为 assistant content)
+                            if (LOG_DB_TRACE) Log.i(TAG, "round ${round + 1} start sid=${session.id.takeLast(6)}")
+                            val base = buildHistory(session.id, ctxRepo, target)
+                            val calls = runStreamRound(
+                                session.id, target, base + protocol,
+                                toolsJson = if (toolsEnabled) DefaultTools.toJsonArrayString(activeTools()) else "",
+                                textSink = roundText,
+                            )
+                            if (calls == null) {
+                                // 用户停止:外层操作协程已随之被取消,这里只是取消前的常规出口
+                                if (LOG_DB_TRACE) Log.i(TAG, "round stopped-by-user sid=${session.id.takeLast(6)} round=${round + 1}")
+                                break
                             }
-                            break
+                            // 流结束:若有工具调用且未超轮次,执行并回传,继续下一轮
+                            if (calls.isEmpty() || !toolsEnabled || round >= MAX_TOOL_ROUNDS) {
+                                if (calls.isNotEmpty() && round >= MAX_TOOL_ROUNDS) {
+                                    appendAgentText(session.id, "\n\n(工具调用轮次已达上限 $MAX_TOOL_ROUNDS,停止继续执行)")
+                                }
+                                break
+                            }
+                            round++
+                            // 执行工具;结果写入工具卡片(UI)+ 压缩后进入协议消息(下一轮请求)
+                            protocol += ChatMessage.assistantWithCalls(roundText.toString(), calls)
+                            for (c in calls) {
+                                val outcome = dispatchTool(c)
+                                completeToolCard(session.id, c.callId, outcome.content, outcome.isError)
+                                protocol += ChatMessage.toolResult(c.callId, ContextPolicy.compressToolResult(outcome.content))
+                            }
                         }
-                        round++
-                        // 执行工具;结果写入工具卡片(UI)+ 压缩后进入协议消息(下一轮请求)
-                        protocol += ChatMessage.assistantWithCalls(roundText.toString(), calls)
-                        for (c in calls) {
-                            val outcome = dispatchTool(c)
-                            completeToolCard(session.id, c.callId, outcome.content, outcome.isError)
-                            protocol += ChatMessage.toolResult(c.callId, ContextPolicy.compressToolResult(outcome.content))
-                        }
+                        finishAgent(session.id)
+                        if (LOG_DB_TRACE) Log.i(TAG, "op finish sid=${session.id.takeLast(6)} rounds=${round + 1}")
                     }
-                    finishAgent(session.id)
+                } catch (t: Throwable) {
+                    // 用户主动停止已由 stopStreaming 收尾;只有真实失败才写错误文案
+                    if (t is CancellationException) {
+                        if (LOG_DB_TRACE) Log.i(TAG, "op cancelled sid=${session.id.takeLast(6)} (user stop or VM clear)")
+                        throw t
+                    }
+                    Log.w(TAG, "op failed sid=${session.id.takeLast(6)}: ${t.message}")
+                    failAgent(session.id, t.toApiError().userMessage)
+                } finally {
+                    if (streamSessionId == session.id) streamSessionId = null
+                    _streaming.value = false
+                    // 流结束(含被取消)时丢弃未决的确认弹窗与会话记忆,避免残留遮罩/记忆泄到下一轮会话语境
+                    _pendingConfirmation.value = null
+                    sessionPermissionMemory.clear()
                 }
-            } catch (t: Throwable) {
-                // 用户主动停止已由 stopStreaming 收尾;只有真实失败才写错误文案
-                if (t is CancellationException) throw t
-                failAgent(session.id, t.toApiError().userMessage)
-            } finally {
-                if (streamSessionId == session.id) streamSessionId = null
-                _streaming.value = false
-                // 流结束(含被取消)时丢弃未决的确认弹窗与会话记忆,避免残留遮罩/记忆泄到下一轮会话语境
-                _pendingConfirmation.value = null
-                sessionPermissionMemory.clear()
+                // 轮次结束后的记忆提取:独立协程执行 —— 它是额外一次 LLM 调用,
+                // 不能让「正在生成」状态与输入框被它拖住(提取失败静默)
+                launch { extractTurnMemories(session.id, target) }
             }
-            // 轮次结束后的记忆提取:独立协程执行 —— 它是额外一次 LLM 调用,
-            // 不能让「正在生成」状态与输入框被它拖住(提取失败静默)
-            viewModelScope.launch { extractTurnMemories(session.id, target) }
+            streamJob = opJob
+            opJob.join()
         }
     }
 
-    /** 停止当前流式回复:取消请求并把「正在生成」落定;按发起流的那条会话收尾,而非当前激活会话。 */
+    /** 停止当前对话操作:取消整个操作协程(含压缩/重试等非流式阶段)并把「正在生成」落定;
+     *  按发起流的那条会话收尾,而非当前激活会话。 */
     fun stopStreaming() {
         val sid = streamSessionId
+        Log.i(TAG, "stop requested sid=${sid?.takeLast(6)} job=${streamJob != null}")
         streamJob?.cancel()
         streamJob = null
         viewModelScope.launch {
@@ -472,6 +500,11 @@ class ChatViewModel @Inject constructor(
      * 再按工具类型执行 —— 记忆类走本地仓库,其余交给 ToolExecutors。
      */
     private suspend fun dispatchTool(c: com.freebuff.core.model.ToolCallReq): com.freebuff.core.model.ToolOutcome {
+        // 占位分派(P0 协议层已注册工具,执行引擎未上线):不执行、不弹权限确认,
+        // 直接回填说明文本让模型自行完成子任务;同时预热模型的调用形态,P1 上线后无缝切换
+        if (c.name == Subagent.TOOL_NAME) {
+            return com.freebuff.core.model.ToolOutcome(Subagent.comingSoonMessage())
+        }
         when (ToolPermissions.effective(c.name, permissionOverridesState.value)) {
             ToolPermission.DENY ->
                 return com.freebuff.core.model.ToolOutcome("该工具已被用户禁用;请勿重复调用,可换其他方式或向用户说明。", isError = true)
