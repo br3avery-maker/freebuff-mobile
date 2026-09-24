@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.freebuff.core.data.context.ContextBuilder
 import com.freebuff.core.data.network.ApiError
 import com.freebuff.core.data.network.ChatMessage
+import com.freebuff.core.data.network.RetryPolicy
 import com.freebuff.core.data.network.toApiError
 import com.freebuff.core.data.repository.CatalogSource
 import com.freebuff.core.data.repository.ChatRepository
@@ -466,7 +467,7 @@ class ChatViewModel @Inject constructor(
             val user = s.messages.lastOrNull { it.role == "user" } ?: return
             val agent = s.messages.lastOrNull { it.role == "agent" } ?: return
             if (user.text.isBlank() || agent.text.isBlank()) return
-            if (agent.text.startsWith("⚠")) return // 失败的一轮没有可提信息(错误文案不作记忆源)
+            if (agent.text.trim().startsWith("⚠")) return // 失败的一轮没有可提信息(错误文案不作记忆源;trim 兼容追加式错误文案)
             val sb = StringBuilder()
             chatRepo.chatStream(
                 endpoint = target.endpoint,
@@ -513,26 +514,42 @@ class ChatViewModel @Inject constructor(
     ): List<com.freebuff.core.model.ToolCallReq>? {
         var calls: List<com.freebuff.core.model.ToolCallReq> = emptyList()
         val job = viewModelScope.launch {
-            try {
-                chatRepo.chatStream(
-                    endpoint = target.endpoint,
-                    model = target.model,
-                    apiKey = target.apiKey,
-                    headers = target.headers,
-                    skipTLS = target.skipTLS,
-                    history = history,
-                    toolsJson = toolsJson,
-                ).collect { ev ->
-                    if (ev is com.freebuff.core.model.AgentEvent.Text) textSink?.append(ev.chunk)
-                    handleAgentEvent(sessionId, ev)?.let { calls = it }
-                }
-            } catch (t: Throwable) {
-                if (t is CancellationException) throw t
-                if (t is ApiError.StreamIdle && textSink?.isNotEmpty() == true) {
-                    // 空闲看门狗触发:保留已生成的部分回复,追加看门狗提示,不算硬失败
-                    appendAgentText(sessionId, "\n\n⚠ 超过 " + (t.idleMs / 1000) + " 秒没有收到新的流式数据,已自动停止生成;以上为已收到的部分回复。")
-                } else {
-                    failAgent(sessionId, t.toApiError().userMessage)
+            var retry = 0
+            while (true) {
+                try {
+                    chatRepo.chatStream(
+                        endpoint = target.endpoint,
+                        model = target.model,
+                        apiKey = target.apiKey,
+                        headers = target.headers,
+                        skipTLS = target.skipTLS,
+                        history = history,
+                        toolsJson = toolsJson,
+                    ).collect { ev ->
+                        if (ev is com.freebuff.core.model.AgentEvent.Text) textSink?.append(ev.chunk)
+                        handleAgentEvent(sessionId, ev)?.let { calls = it }
+                    }
+                    break // 本轮流完整结束
+                } catch (t: Throwable) {
+                    if (t is CancellationException) throw t
+                    // 本轮已有流式输出:半截内容 + 重新生成 = 重复文本,不重试,走收尾提示
+                    if (textSink?.isNotEmpty() == true) {
+                        if (t is ApiError.StreamIdle) {
+                            appendAgentText(sessionId, "\n\n⚠ 超过 " + (t.idleMs / 1000) + " 秒没有收到新的流式数据,已自动停止生成;以上为已收到的部分回复。")
+                        } else {
+                            failAgent(sessionId, t.toApiError().userMessage)
+                        }
+                        break
+                    }
+                    // 瞬时失败(网络抖动/限流/5xx)自动重试;确定性失败(鉴权/参数/TLS)重试必然再败,直接报错
+                    if (!RetryPolicy.isRetryable(t) || retry >= RetryPolicy.MAX_RETRIES) {
+                        failAgent(sessionId, t.toApiError().userMessage)
+                        break
+                    }
+                    retry++
+                    recordRetryAttempt(sessionId, retry, t.toApiError().userMessage)
+                    // 退避等待(指数):期间用户停止则放弃重试
+                    if (!RetryPolicy.waitBackoff(retry) { !_streaming.value }) break
                 }
             }
         }
@@ -540,6 +557,19 @@ class ChatViewModel @Inject constructor(
         job.join()
         // join 正常返回(非取消)时才视为完整一轮;用户 stop 会 cancel job → join 抛 CancellationException
         return if (job.isCancelled) null else calls
+    }
+
+    /** 把一次自动重试写进消息:steps 追加「重试 n」步骤,time 位显示尝试进度(流式期间的状态牌,成功后由 finishAgent 落定真实时间)。 */
+    private suspend fun recordRetryAttempt(sessionId: String, retry: Int, lastError: String) {
+        val s = sessionRepo.get(sessionId) ?: return
+        val last = s.messages.lastOrNull { it.role == "agent" } ?: return
+        sessionRepo.replaceMessage(
+            sessionId, last.id,
+            last.copy(
+                time = "⟳ 第 " + (retry + 1) + "/" + (RetryPolicy.MAX_RETRIES + 1) + " 次尝试",
+                steps = last.steps + MsgStep("重试 " + retry, "上次失败:" + lastError + ";退避后自动重试"),
+            ),
+        )
     }
 
     /** 首条用户消息后自动命名会话(取首行前 12 字);仅当仍是默认标题时生效。 */
@@ -573,7 +603,8 @@ class ChatViewModel @Inject constructor(
         sessionRepo.replaceMessage(sessionId, last.id, last.copy(text = last.text, tools = cards, time = fmtT(System.currentTimeMillis())))
     }
 
+    /** 失败收尾:追加错误文案而非覆盖 —— 保留前面轮次已生成的内容与重试轨迹;时间由随后的 finishAgent 落定。 */
     private suspend fun failAgent(sessionId: String, reason: String) {
-        updateAgentText(sessionId, "⚠ 请求失败:$reason")
+        appendAgentText(sessionId, "\n⚠ 请求失败:$reason")
     }
 }

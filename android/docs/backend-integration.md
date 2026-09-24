@@ -20,6 +20,7 @@ OkHttp(超时/日志/可选跳过 TLS)           core:data/network/ApiClient.kt
 - 所有阻塞式 HTTP 调用经 `apiCallIo { }` 进入 `Dispatchers.IO`,避免主线程网络访问(`NetworkOnMainThreadException`)。
 - 流式对话用异步 `enqueue` + SSE 逐行解析(`ChatRepository.chatStream`),按增量发射文本片段。
 - 流式带**空闲看门狗**(`idleWatchdog`):每收到一个事件重置计时,连续 120 秒(`DEFAULT_STREAM_IDLE_TIMEOUT_MS`)无任何事件则以 `ApiError.StreamIdle` 终止 —— 防「连接存活但服务端不吐数据」导致「正在生成」无限挂住;ChatViewModel 触发时保留已生成的部分回复并追加提示。`idleTimeoutMs <= 0` 可关闭(虚拟时钟单测用)。
+- LLM 调用失败带**自动重试**(`RetryPolicy`):无输出的轮次遇瞬时性失败(超时/连接/DNS/流空闲/429/5xx)最多自动重试 2 次(指数退避 2s→4s,期间可被「停止」中断);本轮已有流式输出则不重试(避免重复文本),退避与重试次数经消息的 steps/time 展示在对话流中。
 
 ## 2. 统一结果与错误分类
 
@@ -36,6 +37,7 @@ sealed interface ApiResult<out T> {
 |---|---|---|
 | `ApiError.Timeout` | `SocketTimeoutException` | 连接超时,请检查网络或端点可达性 |
 | `ApiError.StreamIdle` | 流式空闲看门狗触发(连续 120s 无新事件) | 连接超时:超过 120 秒没有收到任何流式数据,已自动停止。请检查端点状态或换个模型再试 |
+| `ApiError` 瞬时类自动重试 | `RetryPolicy.isRetryable`(Timeout/Unreachable/Dns/StreamIdle/429/5xx) | 最多 2 次自动重试,指数退避 2s→4s;确定性失败(鉴权/路径/参数/TLS/解析)不重试 |
 | `ApiError.Dns` | `UnknownHostException` | 无法解析主机,请检查端点地址 |
 | `ApiError.Unreachable` | `ConnectException` / `NoRouteToHostException` | 无法连接到服务器,请检查端点与网络 |
 | `ApiError.Tls` | `SSLException` | TLS 证书校验失败,可开启「跳过 TLS 校验」 |
