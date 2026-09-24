@@ -104,6 +104,16 @@ object DefaultTools {
             ),
         ),
         AgentTool(
+            name = Subagent.TOOL_NAME,
+            description = "派出一个只读子代理去完成独立子任务(联网调研/读公开仓库/纯计算),它自己拥有独立上下文与工具循环,最终只返回结论。适合把可并行的调研、读取类工作委托出去,自己继续主线。子任务描述必须自包含——子代理看不到当前对话。",
+            params = listOf(
+                AgentTool.Param("agent_type", "string", "子代理类型:researcher(联网调研)/ code_reader(读公开仓库文件)/ analyst(纯计算)"),
+                AgentTool.Param("task", "string", "子任务目标,一句话、自包含(子代理看不到当前对话)"),
+                AgentTool.Param("context", "string", "主 agent 认为必要的最小背景摘录", required = false),
+                AgentTool.Param("expected_output", "string", "期望产出的形态,如 ≤200 字结论+来源列表", required = false),
+            ),
+        ),
+        AgentTool(
             name = "memory_recall",
             description = "检索记忆库:按 user_id 与 query 返回最相关的历史记忆条目(Top K,默认 5)。适合在回答涉及用户偏好、过往约定、任务进度、以前提供过的事实之前调用;memory_type 可只看长期(偏好/事实)或短期(任务进度)。",
             params = listOf(
