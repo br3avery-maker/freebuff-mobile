@@ -49,6 +49,7 @@ class ToolRoundTripTest {
                 ChatMessage.toolResult("call-1", "搜索结果:…"),
             ),
             toolsJson = DefaultTools.toJsonArrayString(),
+            idleTimeoutMs = 0, // 虚拟时钟下关闭看门狗,见 ChatRepositoryTest
         ).toList()
 
         val body = JSONObject(server.takeRequest().body.readUtf8())
@@ -89,6 +90,7 @@ class ToolRoundTripTest {
             skipTLS = false,
             history = listOf(ChatMessage.text("user", "算 1+2")),
             toolsJson = DefaultTools.toJsonArrayString(),
+            idleTimeoutMs = 0, // 虚拟时钟下关闭看门狗,见 ChatRepositoryTest
         ).toList()
 
         val calls = events.filterIsInstance<AgentEvent.Calls>().single().calls

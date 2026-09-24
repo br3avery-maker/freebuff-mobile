@@ -56,6 +56,7 @@ import javax.inject.Named
 /**
  * 对话页:管理当前会话、输入框、真实 SSE 流式发送与停止。
  * 会话数据经 Room Flow 驱动,流式回复逐步写回占位消息。
+ * 流式带空闲看门狗(连接存活但长时间不吐数据时自动停止,见 ChatRepository.idleWatchdog)。
  */
 @HiltViewModel
 class ChatViewModel @Inject constructor(
@@ -527,7 +528,12 @@ class ChatViewModel @Inject constructor(
                 }
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
-                failAgent(sessionId, t.toApiError().userMessage)
+                if (t is ApiError.StreamIdle && textSink?.isNotEmpty() == true) {
+                    // 空闲看门狗触发:保留已生成的部分回复,追加看门狗提示,不算硬失败
+                    appendAgentText(sessionId, "\n\n⚠ 超过 " + (t.idleMs / 1000) + " 秒没有收到新的流式数据,已自动停止生成;以上为已收到的部分回复。")
+                } else {
+                    failAgent(sessionId, t.toApiError().userMessage)
+                }
             }
         }
         streamJob = job

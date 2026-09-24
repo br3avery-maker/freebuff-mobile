@@ -21,6 +21,13 @@ class ApiErrorTest {
     }
 
     @Test
+    fun `流式空闲归类 StreamIdle 并带秒数文案`() {
+        val e = ApiError.StreamIdle(120_000L)
+        assertEquals("连接超时:超过 120 秒没有收到任何流式数据,已自动停止。请检查端点状态或换个模型再试", e.userMessage)
+        assertEquals(120_000L, (e as ApiError.StreamIdle).idleMs)
+    }
+
+    @Test
     fun `DNS 失败归类 Dns`() {
         assertTrue(UnknownHostException("h").toApiError() is ApiError.Dns)
     }

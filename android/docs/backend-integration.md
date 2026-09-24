@@ -19,6 +19,7 @@ OkHttp(超时/日志/可选跳过 TLS)           core:data/network/ApiClient.kt
 - UI 层只读错误文案([ApiError.userMessage]),不解析异常类型之外的状态码逻辑。
 - 所有阻塞式 HTTP 调用经 `apiCallIo { }` 进入 `Dispatchers.IO`,避免主线程网络访问(`NetworkOnMainThreadException`)。
 - 流式对话用异步 `enqueue` + SSE 逐行解析(`ChatRepository.chatStream`),按增量发射文本片段。
+- 流式带**空闲看门狗**(`idleWatchdog`):每收到一个事件重置计时,连续 120 秒(`DEFAULT_STREAM_IDLE_TIMEOUT_MS`)无任何事件则以 `ApiError.StreamIdle` 终止 —— 防「连接存活但服务端不吐数据」导致「正在生成」无限挂住;ChatViewModel 触发时保留已生成的部分回复并追加提示。`idleTimeoutMs <= 0` 可关闭(虚拟时钟单测用)。
 
 ## 2. 统一结果与错误分类
 
@@ -34,6 +35,7 @@ sealed interface ApiResult<out T> {
 | 分类 | 触发条件 | 展示文案(节选) |
 |---|---|---|
 | `ApiError.Timeout` | `SocketTimeoutException` | 连接超时,请检查网络或端点可达性 |
+| `ApiError.StreamIdle` | 流式空闲看门狗触发(连续 120s 无新事件) | 连接超时:超过 120 秒没有收到任何流式数据,已自动停止。请检查端点状态或换个模型再试 |
 | `ApiError.Dns` | `UnknownHostException` | 无法解析主机,请检查端点地址 |
 | `ApiError.Unreachable` | `ConnectException` / `NoRouteToHostException` | 无法连接到服务器,请检查端点与网络 |
 | `ApiError.Tls` | `SSLException` | TLS 证书校验失败,可开启「跳过 TLS 校验」 |

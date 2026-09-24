@@ -30,6 +30,7 @@ class ChatRepositoryTest {
         server.shutdown()
     }
 
+    // 虚拟时钟下看门狗会被瞬间推到超时,这些测试不针对看门狗,显式关闭
     private fun stream(history: List<Pair<String, String>> = emptyList()) =
         repo.chatStream(
             endpoint = server.url("/v1").toString(),
@@ -38,6 +39,7 @@ class ChatRepositoryTest {
             headers = emptyMap(),
             skipTLS = false,
             history = history.map { ChatMessage.text(it.first, it.second) },
+            idleTimeoutMs = 0,
         )
 
     @Test
@@ -63,6 +65,7 @@ class ChatRepositoryTest {
             headers = mapOf("X-Custom" to "1"),
             skipTLS = false,
             history = listOf(ChatMessage.text("user", "hi")),
+            idleTimeoutMs = 0,
         ).toList()
 
         val req = server.takeRequest()
@@ -116,6 +119,7 @@ class ChatRepositoryTest {
                 skipTLS = false,
                 history = emptyList(),
                 toolsJson = "",
+                idleTimeoutMs = 0,
             ).toList()
             fail("应抛出异常")
         } catch (e: Exception) {

@@ -4,6 +4,8 @@ import com.freebuff.core.data.network.ApiError
 import com.freebuff.core.data.network.AgentEventParser
 import com.freebuff.core.data.network.ChatMessage
 import com.freebuff.core.data.network.buildChatRequest
+import com.freebuff.core.data.network.DEFAULT_STREAM_IDLE_TIMEOUT_MS
+import com.freebuff.core.data.network.idleWatchdog
 import com.freebuff.core.data.network.parseSseData
 import com.freebuff.core.model.AgentEvent
 import kotlinx.coroutines.channels.awaitClose
@@ -38,6 +40,8 @@ class ChatRepository @Inject constructor() {
      * @param skipTLS 是否跳过 TLS 校验
      * @param history 历史消息(文本/工具调用/工具结果混合)
      * @param toolsJson OpenAI 兼容 tools 数组;空串表示不启用 function calling
+     * @param idleTimeoutMs 流式空闲看门狗阈值:连续这么久没有任何事件到达则以
+     *   [ApiError.StreamIdle] 终止(防「连接存活但不吐数据」的无限等待);<= 0 关闭
      * @return 事件流,按到达顺序;HTTP/网络失败时抛出异常
      */
     fun chatStream(
@@ -48,6 +52,7 @@ class ChatRepository @Inject constructor() {
         skipTLS: Boolean,
         history: List<ChatMessage>,
         toolsJson: String = "",
+        idleTimeoutMs: Long = DEFAULT_STREAM_IDLE_TIMEOUT_MS,
     ): Flow<AgentEvent> = callbackFlow {
         val (request, client) = buildChatRequest(
             endpoint = endpoint,
@@ -94,5 +99,5 @@ class ChatRepository @Inject constructor() {
             }
         })
         awaitClose { call.cancel() }
-    }
+    }.idleWatchdog(idleTimeoutMs)
 }

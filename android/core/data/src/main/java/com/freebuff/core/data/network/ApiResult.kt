@@ -32,6 +32,9 @@ sealed class ApiError(message: String, cause: Throwable? = null) : Exception(mes
     /** TLS 证书校验失败。 */
     class Tls(cause: Throwable? = null) : ApiError("TLS 证书校验失败,可在自定义模型中开启「跳过 TLS 校验」", cause)
 
+    /** 流式空闲超时:连续长时间没有任何事件到达(连接存活但不吐数据)。 */
+    class StreamIdle(val idleMs: Long) : ApiError("连接超时:超过 " + (idleMs / 1000) + " 秒没有收到任何流式数据,已自动停止。请检查端点状态或换个模型再试")
+
     /** HTTP 非 2xx:保留状态码与响应片段,便于定位鉴权/路径/限流问题。 */
     class Http(val code: Int, val body: String = "") : ApiError(httpErrorMessage(code))
 
