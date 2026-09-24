@@ -190,21 +190,26 @@ class ChatViewModel @Inject constructor(
 
     private val _pendingConfirmation = MutableStateFlow<PendingConfirm?>(null)
 
+    /** 会话级权限记忆:「本次会话记住选择」——纯内存,会话切换/流结束即失效。 */
+    private val sessionPermissionMemory = com.freebuff.core.model.SessionPermissionMemory()
+
     /** 对话页据此弹「是否允许执行该工具」确认框。 */
     val pendingConfirmation: StateFlow<com.freebuff.core.model.ToolCallReq?> =
         _pendingConfirmation.map { it?.req }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    /** 用户批准当前挂起的工具调用:卡片回 running,门闩放行。 */
-    fun approvePendingTool() {
+    /** 用户批准当前挂起的工具调用:卡片回 running,门闩放行;勾选记住时写入会话记忆。 */
+    fun approvePendingTool(remember: Boolean = false) {
         val p = _pendingConfirmation.value ?: return
         viewModelScope.launch { upsertToolCardState(streamSessionId ?: return@launch, p.req.callId, "running") }
+        if (remember) sessionPermissionMemory.remember(p.req.name, ToolPermission.ALLOW)
         p.deferred.complete(true)
         _pendingConfirmation.value = null
     }
 
-    /** 用户拒绝当前挂起的工具调用:卡片标红,拒绝作为执行结果回传给模型。 */
-    fun denyPendingTool() {
+    /** 用户拒绝当前挂起的工具调用:卡片标红,拒绝作为执行结果回传给模型;勾选记住时本会话内后续同工具直接拒绝。 */
+    fun denyPendingTool(remember: Boolean = false) {
         val p = _pendingConfirmation.value ?: return
+        if (remember) sessionPermissionMemory.remember(p.req.name, ToolPermission.DENY)
         p.deferred.complete(false)
         _pendingConfirmation.value = null
         viewModelScope.launch {
@@ -310,8 +315,9 @@ class ChatViewModel @Inject constructor(
             } finally {
                 if (streamSessionId == session.id) streamSessionId = null
                 _streaming.value = false
-                // 流结束(含被取消)时丢弃未决的确认弹窗,避免残留遮罩
+                // 流结束(含被取消)时丢弃未决的确认弹窗与会话记忆,避免残留遮罩/记忆泄到下一轮会话语境
                 _pendingConfirmation.value = null
+                sessionPermissionMemory.clear()
             }
             // 轮次结束后的记忆提取:独立协程执行 —— 它是额外一次 LLM 调用,
             // 不能让「正在生成」状态与输入框被它拖住(提取失败静默)
@@ -470,6 +476,12 @@ class ChatViewModel @Inject constructor(
             ToolPermission.DENY ->
                 return com.freebuff.core.model.ToolOutcome("该工具已被用户禁用;请勿重复调用,可换其他方式或向用户说明。", isError = true)
             ToolPermission.CONFIRM -> {
+                // 会话内已记住本工具的决定(「本次会话记住选择」):免弹窗直接按记忆执行/拒绝
+                sessionPermissionMemory.get(c.name)?.let { remembered ->
+                    if (remembered == ToolPermission.DENY) {
+                        return com.freebuff.core.model.ToolOutcome("用户已选择本次会话内不再执行该工具;请勿重复调用,可换其他方式或向用户说明。", isError = true)
+                    }
+                }
                 // 卡片置 waiting;await 真挂起等用户决定,停止对话(取消协程)会直接中断
                 val sid = streamSessionId
                     ?: return com.freebuff.core.model.ToolOutcome("会话已关闭", isError = true)

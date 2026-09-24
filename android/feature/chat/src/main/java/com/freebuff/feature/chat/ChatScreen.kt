@@ -30,6 +30,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -114,17 +115,23 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
             ToolConfirmOverlay(
                 tool = req.name,
                 input = req.argsJson,
-                onAllow = { viewModel.approvePendingTool() },
-                onDeny = { viewModel.denyPendingTool() },
+                onAllow = { remember -> viewModel.approvePendingTool(remember) },
+                onDeny = { remember -> viewModel.denyPendingTool(remember) },
             )
         }
     }
 }
 
-/** 工具执行确认弹窗:CONFIRM 级工具执行前必须经用户批准(拒绝会回传给模型)。 */
+/** 工具执行确认弹窗:CONFIRM 级工具执行前必须经用户批准;可勾选「本次会话记住选择」免后续弹窗。 */
 @Composable
-private fun ToolConfirmOverlay(tool: String, input: String, onAllow: () -> Unit, onDeny: () -> Unit) {
+private fun ToolConfirmOverlay(
+    tool: String,
+    input: String,
+    onAllow: (remember: Boolean) -> Unit,
+    onDeny: (remember: Boolean) -> Unit,
+) {
     val t = LocalTokens.current
+    var rememberChoice by remember { mutableStateOf(false) }
     Box(
         Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f))
             .clickable(enabled = false) { },
@@ -146,19 +153,33 @@ private fun ToolConfirmOverlay(tool: String, input: String, onAllow: () -> Unit,
             }
             Spacer(Modifier.height(12.dp))
             Text("该工具需要你的确认后才会执行;拒绝会把结果告知模型。", color = t.text3, fontSize = 11.sp)
+            Spacer(Modifier.height(10.dp))
+            // 「本次会话记住选择」:仅记忆到本次会话结束,不改设置页的持久化分级
+            Row(verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { rememberChoice = !rememberChoice }) {
+                Box(
+                    Modifier.size(15.dp).clip(RoundedCornerShape(4.dp))
+                        .background(if (rememberChoice) t.accent else t.surface2),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (rememberChoice) Text("✓", color = t.accentInk, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.width(8.dp))
+                Text("本次会话记住选择(会话结束自动失效)", color = t.text2, fontSize = 11.sp)
+            }
             Spacer(Modifier.height(16.dp))
             Row {
                 Text(
                     "拒绝", color = t.text2, fontSize = 13.sp, fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f).clip(RFull).background(t.surface2)
-                        .clickable { onDeny() }.padding(vertical = 10.dp),
+                        .clickable { onDeny(rememberChoice) }.padding(vertical = 10.dp),
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 )
                 Spacer(Modifier.width(10.dp))
                 Text(
                     "允许执行", color = t.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f).clip(RFull).background(t.accent.copy(alpha = 0.14f))
-                        .clickable { onAllow() }.padding(vertical = 10.dp),
+                        .clickable { onAllow(rememberChoice) }.padding(vertical = 10.dp),
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 )
             }
