@@ -1,6 +1,8 @@
 package com.freebuff.feature.settings
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -11,6 +13,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -21,6 +26,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.freebuff.core.model.FEEDBACK_URL
 import com.freebuff.core.model.LATEST_VERSION
 import com.freebuff.core.model.OFFICIAL_SITE
+import com.freebuff.core.model.ToolPermission
 import com.freebuff.core.ui.RowCard
 import com.freebuff.core.ui.SectionLabel
 import com.freebuff.core.ui.SegRow
@@ -29,6 +35,55 @@ import com.freebuff.core.ui.openExternal
 import com.freebuff.core.ui.navigation.AppNavState
 import com.freebuff.core.ui.navigation.LocalAppNavigator
 import com.freebuff.core.ui.theme.LocalTokens
+
+/**
+ * 工具权限配置区(工具调用开启时展示):逐工具三级分级(免确认/需确认/禁止)。
+ * 行内展开;显示「已自定义」标记,改动即时生效并持久化到 settings 表。
+ */
+@Composable
+private fun ToolPermissionSection(viewModel: SettingsViewModel) {
+    val t = LocalTokens.current
+    val overrides by viewModel.toolPermissionOverrides.collectAsState()
+    var expanded by remember { mutableStateOf(false) }
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("工具权限", color = t.text2, fontSize = 13.5.sp, modifier = Modifier.weight(1f))
+        Text(if (overrides.isEmpty()) "默认" else overrides.size.toString() + " 项已自定义 · 展开调整 ⌄",
+            color = t.text3, fontSize = 11.sp,
+            modifier = Modifier.clickable { expanded = !expanded })
+    }
+    if (expanded) {
+        Spacer(Modifier.height(8.dp))
+        com.freebuff.core.model.DefaultTools.ALL.forEach { tool ->
+            val effective = overrides[tool.name] ?: com.freebuff.core.model.ToolPermissions.defaultFor(tool.name)
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        com.freebuff.core.model.toolDisplayName(tool.name),
+                        color = t.text, fontSize = 12.sp,
+                    )
+                    Text(tool.name, color = t.text3, fontSize = 9.5.sp)
+                }
+                SegRow(
+                    listOf("免确认", "需确认", "禁止"),
+                    when (effective) {
+                        ToolPermission.ALLOW -> 0
+                        ToolPermission.CONFIRM -> 1
+                        ToolPermission.DENY -> 2
+                    },
+                ) { i ->
+                    viewModel.setToolPermission(
+                        tool.name,
+                        when (i) { 0 -> ToolPermission.ALLOW; 2 -> ToolPermission.DENY; else -> ToolPermission.CONFIRM },
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text("免确认:静默执行;需确认:每次执行前弹窗;禁止:不执行并告知模型。改动即时生效。",
+            color = t.text3, fontSize = 10.sp)
+    }
+}
 
 @Composable
 fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
@@ -76,6 +131,10 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                     modifier = Modifier.padding(bottom = 10.dp))
                 SegRow(listOf("开启", "关闭"), if (toolsEnabled) 0 else 1) { i ->
                     viewModel.setToolsEnabled(i == 0)
+                }
+                if (toolsEnabled) {
+                    Spacer(Modifier.height(14.dp))
+                    ToolPermissionSection(viewModel)
                 }
                 Spacer(Modifier.height(14.dp))
                 Text("上下文记忆", color = t.text2, fontSize = 13.5.sp,

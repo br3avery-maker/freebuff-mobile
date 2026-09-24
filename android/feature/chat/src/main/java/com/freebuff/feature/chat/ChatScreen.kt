@@ -65,7 +65,9 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
         }
     }
     val badge = modelList.firstOrNull { it.id == modelId }?.badge ?: "M"
-    Column(Modifier.fillMaxSize()) {
+    val pendingConfirm by viewModel.pendingConfirmation.collectAsState()
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
         ChatHeader(
             title = session?.title ?: "新对话",
             badge = badge,
@@ -106,6 +108,61 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
         )
         // 切换会话时清空输入框,避免把 A 会话草稿发进 B 会话
         LaunchedEffect(session?.id) { viewModel.clearInputIfStale() }
+        }
+        // CONFIRM 级工具的确认弹窗(权限层,见 docs/backend-integration.md「工具权限」)
+        pendingConfirm?.let { req ->
+            ToolConfirmOverlay(
+                tool = req.name,
+                input = req.argsJson,
+                onAllow = { viewModel.approvePendingTool() },
+                onDeny = { viewModel.denyPendingTool() },
+            )
+        }
+    }
+}
+
+/** 工具执行确认弹窗:CONFIRM 级工具执行前必须经用户批准(拒绝会回传给模型)。 */
+@Composable
+private fun ToolConfirmOverlay(tool: String, input: String, onAllow: () -> Unit, onDeny: () -> Unit) {
+    val t = LocalTokens.current
+    Box(
+        Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f))
+            .clickable(enabled = false) { },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            Modifier.padding(horizontal = 28.dp).clip(R14).background(t.surface).padding(20.dp),
+        ) {
+            Text("工具执行确认", color = t.text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(toolGlyph(tool) + " ", color = t.accent, fontSize = 13.sp)
+                Text(toolDisplayName(tool), color = t.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            }
+            if (input.isNotBlank()) {
+                Spacer(Modifier.height(8.dp))
+                Text(input.take(300), color = t.text3, fontSize = 11.sp, lineHeight = 15.sp,
+                    fontFamily = FontFamily.Monospace)
+            }
+            Spacer(Modifier.height(12.dp))
+            Text("该工具需要你的确认后才会执行;拒绝会把结果告知模型。", color = t.text3, fontSize = 11.sp)
+            Spacer(Modifier.height(16.dp))
+            Row {
+                Text(
+                    "拒绝", color = t.text2, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f).clip(RFull).background(t.surface2)
+                        .clickable { onDeny() }.padding(vertical = 10.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    "允许执行", color = t.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f).clip(RFull).background(t.accent.copy(alpha = 0.14f))
+                        .clickable { onAllow() }.padding(vertical = 10.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+            }
+        }
     }
 }
 
@@ -304,6 +361,7 @@ private fun ToolCardItem(card: ToolCard, last: Boolean) {
     val t = LocalTokens.current
     val expanded = remember(card.callId) { mutableStateOf(false) }
     val stateColor = when {
+        card.isWaiting -> t.accent
         card.isRunning -> t.accent
         card.isError -> t.danger
         else -> t.ok
@@ -314,7 +372,7 @@ private fun ToolCardItem(card: ToolCard, last: Boolean) {
             .clickable { expanded.value = !expanded.value }.padding(horizontal = 10.dp, vertical = 8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            if (card.isRunning) {
+            if (card.isRunning || card.isWaiting) {
                 val alpha = rememberInfiniteAlpha()
                 Box(
                     Modifier.size(7.dp).clip(RFull).background(stateColor.copy(alpha = 0.35f + 0.65f * alpha)),
@@ -334,6 +392,7 @@ private fun ToolCardItem(card: ToolCard, last: Boolean) {
             Spacer(Modifier.weight(1f))
             Text(
                 when {
+                    card.isWaiting -> "待确认"
                     card.isRunning -> "运行中"
                     card.isError -> "失败"
                     else -> "完成"

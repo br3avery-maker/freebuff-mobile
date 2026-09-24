@@ -16,6 +16,7 @@ import com.freebuff.core.model.CustomModel
 import com.freebuff.core.model.GitState
 import com.freebuff.core.model.RemoteVersion
 import com.freebuff.core.model.RepairReport
+import com.freebuff.core.model.ToolPermission
 import com.freebuff.core.model.mergedModelList
 import com.freebuff.core.model.uid
 import com.freebuff.core.ui.navigation.AppNavState
@@ -67,6 +68,15 @@ class SettingsViewModel @Inject constructor(
     /** 上下文记忆开关(Letta 式记忆块 + save_memory 自编辑)。 */
     val memoryEnabled: StateFlow<Boolean> = settings.memoryEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    /** 工具权限覆写(用户改过的工具;生效分级 = 覆写 ∪ 默认)。 */
+    val toolPermissionOverrides: StateFlow<Map<String, ToolPermission>> = settings.toolPermissionOverrides
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    /** 单工具权限变更(与默认一致时自动清除覆写)。 */
+    fun setToolPermission(tool: String, p: ToolPermission) {
+        viewModelScope.launch { settings.setToolPermission(tool, p) }
+    }
 
     fun setMemoryEnabled(v: Boolean) {
         viewModelScope.launch { settings.setMemoryEnabled(v) }

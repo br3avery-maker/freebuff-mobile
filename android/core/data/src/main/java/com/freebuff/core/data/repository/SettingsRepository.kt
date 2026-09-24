@@ -4,6 +4,8 @@ import com.freebuff.core.data.db.FreebuffDao
 import com.freebuff.core.data.db.SettingEntity
 import com.freebuff.core.model.GitState
 import com.freebuff.core.model.LATEST_VERSION
+import com.freebuff.core.model.ToolPermission
+import com.freebuff.core.model.ToolPermissions
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -32,6 +34,9 @@ class SettingsRepository @Inject constructor(
 
         /** 上下文记忆开关(Letta 式记忆块注入 + save_memory 自编辑)。 */
         const val KEY_MEMORY_ENABLED = "memoryEnabled"
+
+        /** 工具权限映射(工具名 → allow/confirm/deny,JSON;见 ToolPermissions)。 */
+        const val KEY_TOOL_PERMISSIONS = ToolPermissions.SETTINGS_KEY
 
         /** Git OAuth access_token(Keystore 加密后的密文)。 */
         const val KEY_GIT_TOKEN = "gitToken"
@@ -103,6 +108,11 @@ class SettingsRepository @Inject constructor(
     /** 上下文记忆开关:开启后注入核心记忆块并允许模型 save_memory(默认开)。 */
     val memoryEnabled = getStringFlow(KEY_MEMORY_ENABLED, "true").map { it.toBoolean() }
 
+    /** 工具权限覆写(仅用户显式改过的工具;生效分级 = 覆写 ∪ 默认,见 ToolPermissions.effective)。 */
+    val toolPermissionOverrides = getStringFlow(KEY_TOOL_PERMISSIONS, "")
+        .map { ToolPermissions.decode(it) }
+        .distinctUntilChanged()
+
     suspend fun setThemeMode(mode: String) = setString(KEY_THEME_MODE, mode)
     suspend fun setModelId(id: String) = setString(KEY_MODEL_ID, id)
     suspend fun setRepoParse(mode: String) = setString(KEY_REPO_PARSE, mode)
@@ -110,6 +120,16 @@ class SettingsRepository @Inject constructor(
     suspend fun setToolsEnabled(v: Boolean) = setBool(KEY_TOOLS_ENABLED, v)
 
     suspend fun setMemoryEnabled(v: Boolean) = setBool(KEY_MEMORY_ENABLED, v)
+
+    /** 写入单工具的权限覆写;与默认一致时清除条目(设置回归默认,存储保持最小)。 */
+    suspend fun setToolPermission(tool: String, p: ToolPermission) {
+        val cur = ToolPermissions.decode(getString(KEY_TOOL_PERMISSIONS, "")).toMutableMap()
+        if (p == ToolPermissions.defaultFor(tool)) cur.remove(tool) else cur[tool] = p
+        setString(KEY_TOOL_PERMISSIONS, ToolPermissions.encode(cur))
+    }
+
+    /** 清空全部权限覆写(恢复默认分级)。 */
+    suspend fun resetToolPermissions() = setString(KEY_TOOL_PERMISSIONS, "")
     suspend fun setVersion(v: String) = setString(KEY_VERSION, v)
     suspend fun applyUpdate() = setString(KEY_VERSION, LATEST_VERSION)
 }

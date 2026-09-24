@@ -35,7 +35,7 @@ sealed interface AgentEvent {
     data class Calls(val calls: List<ToolCallReq>) : AgentEvent
 }
 
-/** 消息内嵌的工具卡片(随消息持久化)。state: running | done | error。 */
+/** 消息内嵌的工具卡片(随消息持久化)。state: waiting | running | done | error。 */
 data class ToolCard(
     val callId: String,
     val tool: String,
@@ -45,6 +45,8 @@ data class ToolCard(
 ) {
     val isRunning: Boolean get() = state == "running"
     val isError: Boolean get() = state == "error"
+    /** 等待用户确认(CONFIRM 级工具已拦截,弹窗未决)。 */
+    val isWaiting: Boolean get() = state == "waiting"
     /** 子代理卡片:tool 以 subagent: 前缀携带代理名。 */
     val subagentName: String? get() = if (tool.startsWith(SUBAGENT_PREFIX)) tool.removePrefix(SUBAGENT_PREFIX) else null
 

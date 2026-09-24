@@ -34,6 +34,8 @@ import com.freebuff.core.model.MsgStep
 import com.freebuff.core.model.OfficialModel
 import com.freebuff.core.model.Session
 import com.freebuff.core.model.ToolCard
+import com.freebuff.core.model.ToolPermission
+import com.freebuff.core.model.ToolPermissions
 import com.freebuff.core.model.fmtT
 import com.freebuff.core.model.mergedModelList
 import com.freebuff.core.model.uid
@@ -48,6 +50,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -175,6 +178,46 @@ class ChatViewModel @Inject constructor(
     private fun activeTools(): List<com.freebuff.core.model.AgentTool> =
         com.freebuff.core.model.DefaultTools.forCapabilities(memory = memoryEnabled)
 
+    /** 工具权限覆写(设置页可配置;生效分级 = 覆写 ∪ 默认)。 */
+    private val permissionOverridesState: StateFlow<Map<String, ToolPermission>> =
+        settings.toolPermissionOverrides.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    /** 挂起的确认请求:同一时刻至多一个(CONFIRM 级工具串行执行)。 */
+    private val _pendingConfirmation = MutableStateFlow<com.freebuff.core.model.ToolCallReq?>(null)
+
+    /** 对话页据此弹「是否允许执行该工具」确认框。 */
+    val pendingConfirmation: StateFlow<com.freebuff.core.model.ToolCallReq?> = _pendingConfirmation.asStateFlow()
+
+    /** 用户批准当前挂起的工具调用:卡片回 running,门闩放行。 */
+    fun approvePendingTool() {
+        val req = _pendingConfirmation.value ?: return
+        viewModelScope.launch { upsertToolCardState(streamSessionId ?: req.callId, req.callId, "running") }
+        _grantedCalls.add(req.callId)
+        _pendingConfirmation.value = null
+        _confirmationGate.value = _confirmationGate.value + 1
+    }
+
+    /** 用户拒绝当前挂起的工具调用:卡片标红并回传拒绝结果给模型。 */
+    fun denyPendingTool() {
+        val req = _pendingConfirmation.value ?: return
+        _pendingConfirmation.value = null
+        viewModelScope.launch {
+            val sid = streamSessionId ?: return@launch
+            completeToolCard(sid, req.callId, "(用户拒绝执行该工具)", isError = true)
+            _deniedCalls[req.callId] = com.freebuff.core.model.ToolOutcome("用户拒绝执行该工具;请勿重复调用,可换其他方式或向用户说明。", isError = true)
+            _confirmationGate.value = _confirmationGate.value + 1
+        }
+    }
+
+    /** 已批准的调用 id;确认后放行一次,回传结果后移除。 */
+    private val _grantedCalls = mutableSetOf<String>()
+
+    /** 被拒绝调用的回传结果(拒绝也是一种结果,模型需要收到它才能继续)。 */
+    private val _deniedCalls = mutableMapOf<String, com.freebuff.core.model.ToolOutcome>()
+
+    /** 确认流信号:弹窗已决时唤醒 dispatchTool 里的挂起等待。 */
+    private val _confirmationGate = MutableStateFlow(0L)
+
     fun updateInput(v: String) { _chatInput.value = v }
 
     /** 切换会话时丢弃残留草稿:记录上一次输入归属,只有归属变化才清。 */
@@ -259,6 +302,7 @@ class ChatViewModel @Inject constructor(
                         for (c in calls) {
                             val outcome = dispatchTool(c)
                             completeToolCard(session.id, c.callId, outcome.content, outcome.isError)
+                            _outcomeCache[c.callId] = outcome.content
                             protocol += ChatMessage.toolResult(c.callId, ContextPolicy.compressToolResult(outcome.content))
                         }
                     }
@@ -420,13 +464,40 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    /** 端侧工具分派:记忆类工具走本地仓库(save_memory 自编辑块 / memory_recall 检索),其余交给 ToolExecutors。 */
-    private suspend fun dispatchTool(c: com.freebuff.core.model.ToolCallReq): com.freebuff.core.model.ToolOutcome =
-        when (c.name) {
+    /**
+     * 端侧工具分派:先过权限层(allow 静默执行 / confirm 挂起等用户决定 / deny 直接拒绝),
+     * 再按工具类型执行 —— 记忆类走本地仓库,其余交给 ToolExecutors。
+     */
+    private suspend fun dispatchTool(c: com.freebuff.core.model.ToolCallReq): com.freebuff.core.model.ToolOutcome {
+        when (ToolPermissions.effective(c.name, permissionOverridesState.value)) {
+            ToolPermission.DENY ->
+                return com.freebuff.core.model.ToolOutcome("该工具已被用户禁用;请勿重复调用,可换其他方式或向用户说明。", isError = true)
+            ToolPermission.CONFIRM -> {
+                // 卡片置 waiting(可点击,但弹窗是唯一决定入口);挂起等待,停止对话会取消整个协程
+                val sid = streamSessionId
+                    ?: return com.freebuff.core.model.ToolOutcome("会话已关闭", isError = true)
+                upsertToolCardState(sid, c.callId, "waiting")
+                _pendingConfirmation.value = c
+                _confirmationGate.first() // 弹窗决定(approve/deny)或流被取消时唤醒
+                _deniedCalls.remove(c.callId)?.let { return it }
+                _grantedCalls.remove(c.callId) // 已批准:放行执行
+            }
+            ToolPermission.ALLOW -> Unit
+        }
+        return when (c.name) {
             "save_memory" -> executeSaveMemory(c)
             "memory_recall" -> executeMemoryRecall(c)
             else -> tools.execute(c)
         }
+    }
+
+    /** 把指定工具卡片的状态置为 waiting/running(权限确认流用)。 */
+    private suspend fun upsertToolCardState(sessionId: String, callId: String, state: String) {
+        val s = sessionRepo.get(sessionId) ?: return
+        val last = s.messages.lastOrNull { it.role == "agent" } ?: return
+        val cards = last.tools.map { if (it.callId == callId) it.copy(state = state) else it }
+        sessionRepo.replaceMessage(sessionId, last.id, last.copy(tools = cards))
+    }
 
     /**
      * memory_recall 工具端侧执行:按 user_id/query/top_k/memory_type 检索记忆库。
@@ -549,7 +620,7 @@ class ChatViewModel @Inject constructor(
                     retry++
                     recordRetryAttempt(sessionId, retry, t.toApiError().userMessage)
                     // 退避等待(指数):期间用户停止则放弃重试
-                    if (!RetryPolicy.waitBackoff(retry) { !_streaming.value }) break
+                    if (!RetryPolicy.waitBackoff(retry) { !_streaming.value || _outcomeCache.isNotEmpty() }) break
                 }
             }
         }
@@ -558,6 +629,9 @@ class ChatViewModel @Inject constructor(
         // join 正常返回(非取消)时才视为完整一轮;用户 stop 会 cancel job → join 抛 CancellationException
         return if (job.isCancelled) null else calls
     }
+
+    /** 已回传的工具结果缓存:重试前若非空说明前轮已有工具产出,直接停止重试(避免上下文自相矛盾)。 */
+    private val _outcomeCache = mutableMapOf<String, String>()
 
     /** 把一次自动重试写进消息:steps 追加「重试 n」步骤,time 位显示尝试进度(流式期间的状态牌,成功后由 finishAgent 落定真实时间)。 */
     private suspend fun recordRetryAttempt(sessionId: String, retry: Int, lastError: String) {
