@@ -45,6 +45,7 @@ import com.freebuff.core.model.ToolCard
 import com.freebuff.core.model.toolDisplayName
 import com.freebuff.core.model.toolGlyph
 import com.freebuff.core.ui.MiniMarkdown
+import com.freebuff.core.ui.ModelChip
 import com.freebuff.core.ui.R14
 import com.freebuff.core.ui.RFull
 import com.freebuff.core.ui.navigation.AppNavState
@@ -65,13 +66,13 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
             listState.animateScrollToItem(session!!.messages.size - 1)
         }
     }
-    val badge = modelList.firstOrNull { it.id == modelId }?.badge ?: "M"
+    val modelName = modelList.firstOrNull { it.id == modelId }?.name.orEmpty()
     val pendingConfirm by viewModel.pendingConfirmation.collectAsState()
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
         ChatHeader(
             title = session?.title ?: "新对话",
-            badge = badge,
+            modelName = modelName,
             onBack = { navigator.navigate(AppNavState.ROUTE_HOME) },
             onModel = { navigator.openSheet(AppNavState.SHEET_MODEL) },
         )
@@ -254,8 +255,9 @@ private fun ChatEmpty(canPick: Boolean, onPick: (String) -> Unit) {
     }
 }
 
+/** 对话页顶栏:返回 + 标题 + 模型切换条(点开模型表,模型选择属于任务内)。 */
 @Composable
-private fun ChatHeader(title: String, badge: String, onBack: () -> Unit, onModel: () -> Unit) {
+private fun ChatHeader(title: String, modelName: String, onBack: () -> Unit, onModel: () -> Unit) {
     val t = LocalTokens.current
     Row(Modifier.fillMaxWidth().background(t.elev).padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically) {
@@ -264,8 +266,8 @@ private fun ChatHeader(title: String, badge: String, onBack: () -> Unit, onModel
         Text(title, color = t.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
             maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f).padding(horizontal = 6.dp))
-        Text(badge, color = t.accentInk, fontSize = 11.sp, fontWeight = FontWeight.Bold,
-            modifier = Modifier.clip(RFull).background(t.accent).clickable { onModel() }.padding(horizontal = 10.dp, vertical = 5.dp))
+        Spacer(Modifier.width(6.dp))
+        ModelChip(modelName = modelName, onClick = onModel)
     }
 }
 

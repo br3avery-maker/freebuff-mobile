@@ -11,9 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.freebuff.core.model.Session
+import com.freebuff.core.ui.ModelChip
 import com.freebuff.core.ui.RFull
 import com.freebuff.core.ui.SectionLabel
 import com.freebuff.core.ui.navigation.AppNavState
@@ -51,7 +50,11 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
             modifier = Modifier.padding(horizontal = 20.dp))
         Spacer(Modifier.height(10.dp))
         SearchRow(query, viewModel::updateQuery)
-        ModelChip(modelName = modelName, onClick = viewModel::openModelSheet)
+        ModelChip(
+            modelName = modelName,
+            onClick = viewModel::openModelSheet,
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 10.dp),
+        )
         if (viewModel.isDemoBuild) {
             DemoStrip("演示构建 · 未配置官方网关,对话与仓库使用内置数据。")
         }
@@ -81,31 +84,6 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun ModelChip(modelName: String, onClick: () -> Unit) {
-    val t = LocalTokens.current
-    Row(
-        modifier = Modifier
-            .padding(start = 20.dp, end = 20.dp, top = 10.dp)
-            .clip(RFull)
-            .background(t.chip)
-            .clickable { onClick() }
-            .padding(start = 9.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.size(7.dp).clip(RFull).background(t.accent))
-        Spacer(Modifier.width(6.dp))
-        Text(
-            modelName.ifBlank { "选择模型" },
-            color = t.text2, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold,
-            maxLines = 1, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.widthIn(max = 170.dp),
-        )
-        Spacer(Modifier.width(4.dp))
-        Text("⌄", color = t.text3, fontSize = 12.sp)
     }
 }
 

@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -29,6 +30,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -120,6 +122,31 @@ fun Pill(text: String, color: Color = LocalTokens.current.accent, filled: Boolea
             .background(if (filled) color else color.copy(alpha = 0.14f))
             .padding(horizontal = 8.dp, vertical = 2.dp),
     )
+}
+
+/**
+ * 模型切换条:强调色圆点 + 模型名 + ⌄,点击打开模型表。
+ * 会话列表与对话页顶部共用同一外观(模型选择入口保持一致)。
+ */
+@Composable
+fun ModelChip(modelName: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val t = LocalTokens.current
+    Row(
+        modifier = modifier.clip(RFull).background(t.chip).clickable { onClick() }
+            .padding(start = 9.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(7.dp).clip(RFull).background(t.accent))
+        Spacer(Modifier.width(6.dp))
+        Text(
+            modelName.ifBlank { "选择模型" },
+            color = t.text2, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold,
+            maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.widthIn(max = 170.dp),
+        )
+        Spacer(Modifier.width(4.dp))
+        Text("⌄", color = t.text3, fontSize = 12.sp)
+    }
 }
 
 /**
