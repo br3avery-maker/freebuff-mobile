@@ -79,6 +79,13 @@ class TaskWizardViewModel @Inject constructor(
     val customModels: StateFlow<List<CustomModel>> = customModelRepo.models
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    /**
+     * 当前对话模型(设置里 modelId 的即时值)。
+     * 向导草稿默认应以它为准,而不是 [TaskDraft] 里硬编码的默认模型。
+     */
+    val currentModelId: StateFlow<String> = settings.modelId
+        .stateIn(viewModelScope, SharingStarted.Eagerly, TaskDraft().modelId)
+
     val modelList: StateFlow<List<OfficialModel>> = combine(catalog.official, customModels) { official, customs ->
         mergedModelList(official, customs)
     }.stateIn(
@@ -97,6 +104,17 @@ class TaskWizardViewModel @Inject constructor(
     private val launching = AtomicBoolean(false)
 
     fun update(transform: (TaskDraft) -> TaskDraft) { _draft.update(transform) }
+
+    /**
+     * 草稿模型默认沿用当前对话模型:向导里没显式改模型时,不应把用户在设置/对话页
+     * 选好的模型悄悄换掉(TaskDraft 的硬编码默认值只在读不到设置时兜底)。
+     */
+    fun syncDraftModel() {
+        val current = currentModelId.value
+        if (current.isNotBlank() && _draft.value.modelId != current) {
+            _draft.update { it.copy(modelId = current) }
+        }
+    }
 
     fun prev() { _draft.update { it.copy(step = it.step - 1) } }
 
@@ -145,7 +163,8 @@ class TaskWizardViewModel @Inject constructor(
                 settings.setModelId(d.modelId)
                 val s = sessionRepo.create("新对话")
                 val desc = d.desc
-                _draft.value = TaskDraft()
+                // 重置草稿但保留刚用过的模型:下次开向导仍默认同一个模型
+                _draft.value = TaskDraft(modelId = d.modelId)
                 navigator.closeSheet()
                 navigator.openSession(s.id)
                 navigator.navigate(AppNavState.ROUTE_CHAT)

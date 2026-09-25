@@ -34,7 +34,9 @@ val DarkCodeBg = Color(0xFF0A0A0D)
 val DarkCodeHeader = Color(0x08000000)
 val DarkCodeText = Color(0xFFDFE3E8)
 val DarkUserBubble = Color(0xFF23232B)
-val DarkTabbar = Color(0xDB0F0F13)
+// 底栏几乎是实色:透明度留一点玻璃感,但不足以让滚动到栏下的正文与栏内标签
+// 叠在一起(纯透明 + 无模糊 = 文字互相干扰,可读性反而变差)
+val DarkTabbar = Color(0xF20F0F13)
 
 // 浅色
 val LightBg = Color(0xFFF6F6F4)
@@ -52,7 +54,7 @@ val LightBackdrop = Color(0x59202210)
 val LightCodeBg = Color(0xFFF2F2EE)
 val LightCodeText = Color(0xFF2C2E28)
 val LightUserBubble = Color(0xFFE3E6DA)
-val LightTabbar = Color(0xE6FBFBF9)
+val LightTabbar = Color(0xF2FBFBF9)
 val LightLime = Color(0xFF79A80F)
 
 private val DarkScheme = darkColorScheme(

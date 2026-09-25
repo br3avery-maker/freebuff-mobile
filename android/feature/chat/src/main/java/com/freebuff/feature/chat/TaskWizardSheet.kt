@@ -56,6 +56,10 @@ fun TaskWizardSheet(
     val t = LocalTokens.current
     val d by viewModel.draft.collectAsState()
     val modelList by viewModel.modelList.collectAsState()
+    // 把草稿模型对齐当前对话模型(草稿是 Activity 级、会跨次保留)。
+    // 监听的是 StateFlow:设置值由 DAO 异步读入,首帧可能是初始值,拿到真值后会再同步一次。
+    val currentModelId by viewModel.currentModelId.collectAsState()
+    LaunchedEffect(currentModelId) { viewModel.syncDraftModel() }
     SheetScaffold("发起任务", "选择仓库 → 选择模型 → 描述任务") {
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(start = 4.dp, end = 4.dp, bottom = 12.dp)) {
             item {
