@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -71,6 +72,8 @@ private fun ToolPermissionSection(viewModel: SettingsViewModel) {
                         ToolPermission.CONFIRM -> 1
                         ToolPermission.DENY -> 2
                     },
+                    // 有界宽度:不传会让 SegRow 吃掉整行宽度,把左侧工具名挤成 0 宽(不可见)
+                    Modifier.width(180.dp),
                 ) { i ->
                     viewModel.setToolPermission(
                         tool.name,

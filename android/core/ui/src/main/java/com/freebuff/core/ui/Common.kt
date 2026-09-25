@@ -122,10 +122,20 @@ fun Pill(text: String, color: Color = LocalTokens.current.accent, filled: Boolea
     )
 }
 
+/**
+ * 分段控件。默认撑满宽度(整行开关);放在带 weight 兄弟行的 Row 里时必须传入有界宽度 ——
+ * 本组件是 Row 中无 weight 的子项,会先于 weight 兄弟被测量并吃掉全部可用宽度,
+ * 不传宽度会把同级标签列挤成 0 宽(文字换行到不可见、行高暴增)。
+ */
 @Composable
-fun SegRow(options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+fun SegRow(
+    options: List<String>,
+    selected: Int,
+    modifier: Modifier = Modifier.fillMaxWidth(),
+    onSelect: (Int) -> Unit,
+) {
     val t = LocalTokens.current
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(t.surface)
+    Row(modifier.clip(RoundedCornerShape(12.dp)).background(t.surface)
         .border(1.dp, t.border, RoundedCornerShape(12.dp)).padding(3.dp)) {
         options.forEachIndexed { i, opt ->
             Text(

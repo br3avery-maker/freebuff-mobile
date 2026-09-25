@@ -90,6 +90,7 @@ private val TOOL_LABELS: Map<String, String> = mapOf(
     "current_time" to "当前时间",
     "save_memory" to "保存记忆",
     "memory_recall" to "检索记忆",
+    "spawn_subagent" to "派出子代理",
     "end_turn" to "结束回合",
     "ask_user" to "等待输入",
     "suggest_followups" to "推荐后续",
@@ -112,7 +113,7 @@ fun toolGlyph(tool: String): String = when (tool) {
     "memory_recall" -> "❒"
     "write_file", "str_replace", "apply_patch", "propose_write_file", "propose_str_replace" -> "✎"
     "run_terminal_command", "run_file_change_hooks" -> "›_"
-    "spawn_agents", "spawn_agent_inline" -> "✷"
+    "spawn_agents", "spawn_agent_inline", "spawn_subagent" -> "✷"
     "write_todos", "add_subgoal", "update_subgoal", "create_plan", "think_deeply" -> "☰"
     "ask_user", "suggest_followups" -> "?"
     "end_turn", "task_completed" -> "✓"

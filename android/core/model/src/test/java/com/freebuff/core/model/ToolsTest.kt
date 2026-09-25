@@ -65,4 +65,17 @@ class ToolsTest {
         assertTrue("关闭记忆后不应暴露记忆工具", off.none { it == "save_memory" || it == "memory_recall" })
         assertTrue("关闭记忆后其他工具保留", off.contains("web_search"))
     }
+
+    @Test
+    fun `每个注册工具都有中文展示名`() {
+        // 设置页工具权限列表、对话工具卡都用 toolDisplayName;缺标签会退化成英文原名(两个同名的行)
+        val missing = DefaultTools.ALL.map { it.name }.filter { toolDisplayName(it) == it }
+        assertTrue("以下工具缺少 TOOL_LABELS 展示名: $missing", missing.isEmpty())
+    }
+
+    @Test
+    fun `编排类工具有专用字形`() {
+        assertEquals("✷", toolGlyph(Subagent.TOOL_NAME))
+        assertEquals("✷", toolGlyph("spawn_agents"))
+    }
 }
