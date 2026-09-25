@@ -192,6 +192,8 @@ class ChatViewModel @Inject constructor(
     /** 挂起的确认请求:同一时刻至多一个(CONFIRM 级工具串行执行);deferred 即用户决定,await 真挂起。 */
     private class PendingConfirm(
         val req: com.freebuff.core.model.ToolCallReq,
+        /** 发起该确认的会话:批准/拒绝时据此更新卡片 —— 不依赖可变的 streamSessionId。 */
+        val sessionId: String,
         val deferred: kotlinx.coroutines.CompletableDeferred<Boolean>,
     )
 
@@ -207,7 +209,7 @@ class ChatViewModel @Inject constructor(
     /** 用户批准当前挂起的工具调用:卡片回 running,门闩放行;勾选记住时写入会话记忆。 */
     fun approvePendingTool(remember: Boolean = false) {
         val p = _pendingConfirmation.value ?: return
-        viewModelScope.launch { upsertToolCardState(streamSessionId ?: return@launch, p.req.callId, "running") }
+        viewModelScope.launch { upsertToolCardState(p.sessionId, p.req.callId, "running") }
         if (remember) sessionPermissionMemory.remember(p.req.name, ToolPermission.ALLOW)
         p.deferred.complete(true)
         _pendingConfirmation.value = null
@@ -220,9 +222,7 @@ class ChatViewModel @Inject constructor(
         p.deferred.complete(false)
         _pendingConfirmation.value = null
         viewModelScope.launch {
-            streamSessionId?.let { sid ->
-                completeToolCard(sid, p.req.callId, "(用户拒绝执行该工具)", isError = true)
-            }
+            completeToolCard(p.sessionId, p.req.callId, "(用户拒绝执行该工具)", isError = true)
         }
     }
 
@@ -286,6 +286,8 @@ class ChatViewModel @Inject constructor(
             // 把后续答案写进下一次发送的占位消息(即「轮次停止后 agent 消息缺失」的根因)
             val opJob = launch {
                 if (LOG_DB_TRACE) Log.i(TAG, "op begin sid=${session.id.takeLast(6)} msg=${agentMsg.id.takeLast(6)}")
+                // 本次流式操作归属的会话:停止/确认回写都靠它定位(此处必须赋值)
+                streamSessionId = session.id
                 _streaming.value = true
                 try {
                     if (!target.isConfigured) {
@@ -319,7 +321,7 @@ class ChatViewModel @Inject constructor(
                             // 执行工具;结果写入工具卡片(UI)+ 压缩后进入协议消息(下一轮请求)
                             protocol += ChatMessage.assistantWithCalls(roundText.toString(), calls)
                             for (c in calls) {
-                                val outcome = dispatchTool(c)
+                                val outcome = dispatchTool(session.id, c)
                                 completeToolCard(session.id, c.callId, outcome.content, outcome.isError)
                                 protocol += ChatMessage.toolResult(c.callId, ContextPolicy.compressToolResult(outcome.content))
                             }
@@ -499,7 +501,10 @@ class ChatViewModel @Inject constructor(
      * 端侧工具分派:先过权限层(allow 静默执行 / confirm 挂起等用户决定 / deny 直接拒绝),
      * 再按工具类型执行 —— 记忆类走本地仓库,其余交给 ToolExecutors。
      */
-    private suspend fun dispatchTool(c: com.freebuff.core.model.ToolCallReq): com.freebuff.core.model.ToolOutcome {
+    private suspend fun dispatchTool(
+        sessionId: String,
+        c: com.freebuff.core.model.ToolCallReq,
+    ): com.freebuff.core.model.ToolOutcome {
         // 占位分派(P0 协议层已注册工具,执行引擎未上线):不执行、不弹权限确认,
         // 直接回填说明文本让模型自行完成子任务;同时预热模型的调用形态,P1 上线后无缝切换
         if (c.name == Subagent.TOOL_NAME) {
@@ -515,11 +520,11 @@ class ChatViewModel @Inject constructor(
                         return com.freebuff.core.model.ToolOutcome("用户已选择本次会话内不再执行该工具;请勿重复调用,可换其他方式或向用户说明。", isError = true)
                     }
                 }
-                // 卡片置 waiting;await 真挂起等用户决定,停止对话(取消协程)会直接中断
-                val sid = streamSessionId
-                    ?: return com.freebuff.core.model.ToolOutcome("会话已关闭", isError = true)
-                upsertToolCardState(sid, c.callId, "waiting")
-                val pending = PendingConfirm(c, kotlinx.coroutines.CompletableDeferred())
+                // 卡片置 waiting;await 真挂起等用户决定,停止对话(取消协程)会直接中断。
+                // 会话 id 由调用方传入:曾依赖可变的 streamSessionId,一旦漏赋值,
+                // 所有「需确认」工具都会以「会话已关闭」失败、确认弹窗永不出现。
+                upsertToolCardState(sessionId, c.callId, "waiting")
+                val pending = PendingConfirm(c, sessionId, kotlinx.coroutines.CompletableDeferred())
                 _pendingConfirmation.value = pending
                 val granted = pending.deferred.await()
                 if (!granted) {
