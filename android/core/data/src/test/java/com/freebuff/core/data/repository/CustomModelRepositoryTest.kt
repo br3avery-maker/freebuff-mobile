@@ -13,9 +13,11 @@ import com.freebuff.core.data.network.ApiResult
 import com.freebuff.core.data.network.ProbeResult
 import com.freebuff.core.data.security.CryptoManager
 import com.freebuff.core.model.CustomModel
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
+import kotlin.coroutines.CoroutineContext
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
@@ -49,6 +51,27 @@ class CustomModelRepositoryTest {
         server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
         val r = repo.testConnection(model())
         assertTrue("应成功,实际 $r", r is ProbeResult.Success)
+    }
+
+    /** 记录阻塞请求经哪个 dispatcher 执行。 */
+    private class RecordingDispatcher : CoroutineDispatcher() {
+        var dispatches = 0
+        override fun dispatch(context: CoroutineContext, block: Runnable) {
+            dispatches++
+            block.run()
+        }
+    }
+
+    @Test
+    fun `测试连接的阻塞请求切到注入的 IO dispatcher`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+        val rec = RecordingDispatcher()
+        val isolated = CustomModelRepository(NoopDao(), CryptoManager(), rec)
+        val r = isolated.testConnection(model())
+        assertTrue("应成功,实际 $r", r is ProbeResult.Success)
+        // 漏切线程时 OkHttp 的 execute() 会跑在调用线程上:真机(Main)会抛 NetworkOnMainThreadException,
+        // 而 JVM 单测不会有任何报错 —— 所以这条断言只能盯「有没有经过 io dispatcher」
+        assertTrue("阻塞请求必须经 io dispatcher 执行,实际 dispatches=${rec.dispatches}", rec.dispatches >= 1)
     }
 
     @Test

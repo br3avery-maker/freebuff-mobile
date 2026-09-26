@@ -1,11 +1,12 @@
 package com.freebuff.core.model
 
 import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** 工具注册表:OpenAI 兼容序列化与默认工具集完整性。 */
+/** 工具注册表:OpenAI 兼容序列化、说明书质量与执行前参数体检。 */
 class ToolsTest {
 
     @Test
@@ -77,5 +78,105 @@ class ToolsTest {
     fun `编排类工具有专用字形`() {
         assertEquals("✷", toolGlyph(Subagent.TOOL_NAME))
         assertEquals("✷", toolGlyph("spawn_agents"))
+    }
+
+    /* ---------------- 说明书质量(弱模型尤其吃这一套) ---------------- */
+
+    @Test
+    fun `每份说明书都有示例且示例用的是真名字`() {
+        DefaultTools.ALL.forEach { t ->
+            assertTrue("${t.name} 缺调用示例", t.example.startsWith(t.name + "({"))
+            assertTrue("${t.name} 的说明书写得太短,没讲清做什么/何时用", t.description.length >= 20)
+            assertTrue("${t.name} 的参数描述不能为空", t.params.all { it.desc.isNotBlank() })
+            assertTrue(
+                "${t.name} 有非法参数类型",
+                t.params.all { it.type in setOf("string", "integer", "boolean") },
+            )
+        }
+    }
+
+    @Test
+    fun `闭集与上下界写进 schema`() {
+        val save = DefaultTools.find("save_memory")!!
+        assertEquals(
+            "记忆块名是可枚举的闭集",
+            listOf("persona", "user", "project"),
+            save.params.first { it.name == "block" }.enum,
+        )
+        val blockSchema = save.toJsonObject().getJSONObject("function")
+            .getJSONObject("parameters").getJSONObject("properties").getJSONObject("block")
+        assertEquals(3, blockSchema.getJSONArray("enum").length())
+
+        val limit = DefaultTools.find("github_search_repositories")!!.params.first { it.name == "limit" }
+        assertEquals(1, limit.min)
+        assertEquals(10, limit.max)
+        assertEquals("5", limit.default)
+    }
+
+    @Test
+    fun `说明书体积有预算 —— 每轮都会随请求注入`() {
+        val json = DefaultTools.toJsonArrayString()
+        assertTrue("说明书里要带示例行", json.contains("例: "))
+        assertTrue("工具说明书过大(${json.length} 字符),8k 上下文下会挤掉对话", json.length <= 12000)
+    }
+
+    @Test
+    fun `参数体检拦得住弱模型的常见错法`() {
+        val getFile = DefaultTools.find("github_get_file")!!
+
+        // 1) 别名归一:弱模型常把 path 写成 file
+        val (aliased, p1) = DefaultTools.prepare(
+            getFile,
+            JSONObject("{\"owner\":\"CodebuffAI\",\"repo\":\"freebuff\",\"file\":\"README.md\"}"),
+        )
+        assertTrue("别名应该被接受:$p1", p1.isEmpty())
+        assertEquals("README.md", aliased.getString("path"))
+
+        // 2) 缺必填
+        val (_, p2) = DefaultTools.prepare(getFile, JSONObject("{\"owner\":\"a\",\"repo\":\"b\"}"))
+        assertTrue("缺 path 要说出来", p2.any { it is ToolErrors.ArgProblem.Missing && it.name == "path" })
+
+        // 3) 自造参数名(填了 path 也多加一个 schema 里没有的)
+        val (_, p3) = DefaultTools.prepare(
+            getFile,
+            JSONObject("{\"owner\":\"a\",\"repo\":\"b\",\"path\":\"README.md\",\"mode\":\"fast\"}"),
+        )
+        assertTrue("自造参数要报出来", p3.any { it is ToolErrors.ArgProblem.Unknown && it.name == "mode" })
+
+        // 4) 类型与上下界:字符串数字要能收,越界/非数字要报
+        val search = DefaultTools.find("github_search_repositories")!!
+        val (coerced, p4) = DefaultTools.prepare(search, JSONObject("{\"q\":\"compose\",\"limit\":\"7\"}"))
+        assertTrue("数字字符串应被接受:$p4", p4.isEmpty())
+        assertEquals(7, coerced.getInt("limit"))
+        assertTrue(
+            "越界要报",
+            DefaultTools.validate(search, JSONObject("{\"query\":\"x\",\"limit\":99}"))
+                .any { it is ToolErrors.ArgProblem.Range },
+        )
+        assertTrue(
+            "非数字要报类型错",
+            DefaultTools.validate(search, JSONObject("{\"query\":\"x\",\"limit\":\"很多\"}"))
+                .any { it is ToolErrors.ArgProblem.Type },
+        )
+
+        // 5) 枚举大小写对齐 + 非法取值
+        val save = DefaultTools.find("save_memory")!!
+        val (enumNorm, _) = DefaultTools.prepare(save, JSONObject("{\"block\":\"User\",\"content\":\"偏好短\"}"))
+        assertEquals("user", enumNorm.getString("block"))
+        assertTrue(
+            "闭集外的取值要报",
+            DefaultTools.validate(save, JSONObject("{\"block\":\"memory\",\"content\":\"x\"}"))
+                .any { it is ToolErrors.ArgProblem.Enum },
+        )
+    }
+
+    @Test
+    fun `关掉记忆能力后记忆工具不再算可用`() {
+        val on = DefaultTools.forCapabilities(memory = true)
+        assertTrue(DefaultTools.isKnown("save_memory", on))
+
+        val off = DefaultTools.forCapabilities(memory = false)
+        assertTrue("关掉记忆后 save_memory 不该被认作可用", !DefaultTools.isKnown("save_memory", off))
+        assertTrue(DefaultTools.isKnown("web_search", off))
     }
 }

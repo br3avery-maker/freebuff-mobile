@@ -8,7 +8,11 @@ import com.freebuff.core.data.db.MessageEntity
 import com.freebuff.core.data.db.SessionEntity
 import com.freebuff.core.data.db.SessionWithMessages
 import com.freebuff.core.data.db.SettingEntity
+import com.freebuff.core.data.db.toEntity
 import com.freebuff.core.model.ChatMsg
+import com.freebuff.core.model.MsgStep
+import com.freebuff.core.model.MsgSteps
+import com.freebuff.core.model.ToolCard
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
@@ -91,11 +95,79 @@ class SessionRepositoryTest {
         assertEquals("空会话", dao.sessions[s.id]?.title)
     }
 
-    /* ---------------- 全内存 DAO(会话/消息真实读写,其余无需关心) ---------------- */
+    @Test
+    fun `冷启动修复半条消息 —— 空正文补提示、过程性步骤与未跑完的卡片都收干净`() = runTest {
+        val s = repo.create("被中断的会话")
+        repo.appendMessages(
+            s.id,
+            listOf(
+                ChatMsg("m1", "user", text = "帮我查一下时间"),
+                ChatMsg(
+                    "m2", "agent", text = "", time = MsgSteps.GENERATING,
+                    steps = listOf(
+                        MsgStep(MsgSteps.CONNECT, "连接模型并开始生成…"),
+                        MsgStep(MsgSteps.retry(1), "上次失败:连接超时"),
+                    ),
+                    tools = listOf(
+                        ToolCard("c1", "get_time", state = "running"),
+                        ToolCard("c2", "read_url", state = "waiting"),
+                    ),
+                ),
+                ChatMsg("m3", "agent", text = "已经答完的一条", time = "10:00"),
+            ),
+        )
 
+        assertEquals("只有被中断的那条需要修", 1, repo.repairAbandonedMessages())
+
+        val msgs = repo.get(s.id)!!.messages
+        val broken = msgs.first { it.id == "m2" }
+        assertEquals(MsgSteps.INTERRUPTED_NOTE, broken.text)
+        assertEquals("假时间戳要清掉", "", broken.time)
+        assertEquals(
+            "过程性步骤收尾清掉;重试记录是历史性的,保留",
+            listOf(MsgSteps.retry(1)),
+            broken.steps.map { it.name },
+        )
+        assertTrue("没跑完的工具卡片要标成未完成", broken.tools.all { it.isError })
+        assertEquals("已经答完的消息不能动(否则会误伤历史)", "已经答完的一条", msgs.first { it.id == "m3" }.text)
+        assertEquals("修完再跑一次应无改动(幂等)", 0, repo.repairAbandonedMessages())
+    }
+
+    @Test
+    fun `全量扫过之后只扫末尾一条 —— 冷启动不该每次解析全库消息`() = runTest {
+        val s = repo.create("长会话")
+        repo.appendMessages(s.id, listOf(ChatMsg("m1", "user", text = "开始")))
+        assertEquals("首次没有半成品", 0, repo.repairAbandonedMessages())
+
+        // 伪装成修复功能上线前就写坏、又被后续消息压在历史中间的那条(全量扫已经过了,不再翻它)
+        // 位次 -1 保证它在 m1 之前 —— 写在末尾就不是「压在历史中间」了
+        dao.upsertMessages(
+            listOf(
+                ChatMsg("m9", "agent", text = "", steps = listOf(MsgStep(MsgSteps.CONNECT, "连接模型并开始生成…")))
+                    .toEntity(s.id, -1L),
+            ),
+        )
+        assertEquals("全量扫已做过:历史中间的不再处理", 0, repo.repairAbandonedMessages())
+
+        // 进程被杀留下的半成品总在末尾:这条必须修
+        repo.appendMessages(
+            s.id,
+            listOf(ChatMsg("m2", "agent", text = "", steps = listOf(MsgStep(MsgSteps.CONNECT, "连接模型并开始生成…")))),
+        )
+        assertEquals(1, repo.repairAbandonedMessages())
+        assertEquals(MsgSteps.INTERRUPTED_NOTE, repo.get(s.id)!!.messages.last().text)
+        assertEquals(
+            "历史中间的半成品保持原样(不进主流程,不值得每次冷启动解析全库)",
+            "",
+            repo.get(s.id)!!.messages.first { it.id == "m9" }.text,
+        )
+    }
+
+    /* ---------------- 全内存 DAO(会话/消息真实读写,其余无需关心) ---------------- */
     private class MemDao : FreebuffDao {
         val sessions = LinkedHashMap<String, SessionEntity>()
         val messages = LinkedHashMap<String, List<MessageEntity>>()
+        val settings = LinkedHashMap<String, SettingEntity>()
 
         override fun observeSessionsWithMessages(): Flow<List<SessionWithMessages>> =
             flowOf(sessions.values.map { SessionWithMessages(it, messages[it.id].orEmpty()) })
@@ -131,12 +203,12 @@ class SessionRepositoryTest {
         override suspend fun deleteCustomModel(id: String) = Unit
         override suspend fun clearCustomModels() = Unit
 
-        override suspend fun allSettings(): List<SettingEntity> = emptyList()
-        override suspend fun setting(key: String): SettingEntity? = null
-        override fun observeSetting(key: String): Flow<SettingEntity?> = flowOf(null)
-        override suspend fun upsertSetting(setting: SettingEntity) = Unit
-        override suspend fun deleteSetting(key: String) = Unit
-        override suspend fun clearSettings() = Unit
+        override suspend fun allSettings(): List<SettingEntity> = settings.values.toList()
+        override suspend fun setting(key: String): SettingEntity? = settings[key]
+        override fun observeSetting(key: String): Flow<SettingEntity?> = flowOf(settings[key])
+        override suspend fun upsertSetting(setting: SettingEntity) { settings[setting.key] = setting }
+        override suspend fun deleteSetting(key: String) { settings.remove(key) }
+        override suspend fun clearSettings() { settings.clear() }
 
         override suspend fun allMemories(): List<MemoryEntity> = emptyList()
         override fun observeMemories(): Flow<List<MemoryEntity>> = flowOf(emptyList())

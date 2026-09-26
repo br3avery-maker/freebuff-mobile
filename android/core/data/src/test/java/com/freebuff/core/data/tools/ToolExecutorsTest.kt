@@ -1,6 +1,7 @@
 package com.freebuff.core.data.tools
 
 import com.freebuff.core.model.ToolCallReq
+import com.freebuff.core.model.ToolErrors
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import org.junit.Assert.assertEquals
@@ -20,25 +21,59 @@ class ToolExecutorsTest {
     }
 
     @Test
-    fun `计算器 非法表达式返回错误结果`() = runBlocking {
+    fun `计算器 非法表达式回错误信封并给处方`() = runBlocking {
         val r = ex.execute(ToolCallReq("c2", "calculator", """{"expression":"12++"}"""))
         assertTrue(r.isError)
-        assertTrue(r.content.contains("计算失败"))
+        assertTrue("要是固定形状的错误信封", r.content.startsWith(ToolErrors.MARK))
+        assertTrue(r.content.contains("BAD_VALUE"))
+        assertTrue("要说清怎么改", r.content.contains("怎么改: "))
+        assertTrue("要给可照抄的示例", r.content.contains("calculator({"))
     }
 
     @Test
-    fun `缺少参数返回错误结果`() = runBlocking {
+    fun `缺少参数回错误信封并列出参数清单`() = runBlocking {
         val r = ex.execute(ToolCallReq("c3", "calculator", "{}"))
         assertTrue(r.isError)
+        assertTrue(r.content.startsWith(ToolErrors.MARK))
+        assertTrue(r.content.contains("MISSING_PARAM"))
+        assertTrue("要列出参数名 + 类型", r.content.contains("expression:string"))
+
         val r2 = ex.execute(ToolCallReq("c4", "web_fetch", "{}"))
         assertTrue(r2.isError)
+        assertTrue(r2.content.contains("url:string"))
     }
 
     @Test
-    fun `未知工具返回错误结果而非抛异常`() = runBlocking {
+    fun `参数名写错能靠别名救回 自造参数会被挡下`() = runBlocking {
+        // 弱模型常见错法:把 path 写成 file —— 别名归一后照常执行
+        val ok = ex.execute(
+            ToolCallReq("c7", "calculator", """{"expr":"6*7"}"""),
+        )
+        assertFalse("别名 expr 应被接受", ok.isError)
+        assertTrue(ok.content.contains("6*7 = 42"))
+
+        // 真正的自造参数:回信封并告诉它合法参数名
+        val bad = ex.execute(ToolCallReq("c8", "calculator", """{"expression":"1+1","mode":"fast"}"""))
+        assertTrue(bad.isError)
+        assertTrue(bad.content.contains("UNKNOWN_PARAM"))
+        assertTrue(bad.content.contains("mode"))
+    }
+
+    @Test
+    fun `未知工具回带建议的错误信封而非抛异常`() = runBlocking {
         val r = ex.execute(ToolCallReq("c5", "no_such_tool", "{}"))
         assertTrue(r.isError)
-        assertTrue(r.content.contains("未知工具"))
+        assertTrue(r.content.startsWith(ToolErrors.MARK))
+        assertTrue(r.content.contains("UNKNOWN_TOOL"))
+        assertTrue("要列出可用工具", r.content.contains("web_search"))
+    }
+
+    @Test
+    fun `连续失败第二次会劝换路`() = runBlocking {
+        val first = ex.execute(ToolCallReq("c9", "calculator", """{"expression":"1+"}"""), attempt = 1)
+        assertTrue(!first.content.contains(ToolErrors.ESCALATE))
+        val second = ex.execute(ToolCallReq("c10", "calculator", """{"expression":"1+"}"""), attempt = 2)
+        assertTrue("第 2 次失败要升级为换路", second.content.contains(ToolErrors.ESCALATE))
     }
 
     @Test

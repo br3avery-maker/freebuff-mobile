@@ -58,7 +58,7 @@ sealed interface AgentEvent {
     data class Calls(val calls: List<ToolCallReq>) : AgentEvent
 }
 
-/** 消息内嵌的工具卡片(随消息持久化)。state: waiting | running | done | error。 */
+/** 消息内嵌的工具卡片(随消息持久化)。state: waiting | running | done | error | reused。 */
 data class ToolCard(
     val callId: String,
     val tool: String,
@@ -68,6 +68,9 @@ data class ToolCard(
 ) {
     val isRunning: Boolean get() = state == "running"
     val isError: Boolean get() = state == "error"
+
+    /** 完全重复的调用:结果复用上一次,未真正执行(模型重放时避免重复副作用与等待)。 */
+    val isReused: Boolean get() = state == "reused"
     /** 等待用户确认(CONFIRM 级工具已拦截,弹窗未决)。 */
     val isWaiting: Boolean get() = state == "waiting"
     /** 子代理卡片:tool 以 subagent: 前缀携带代理名。 */

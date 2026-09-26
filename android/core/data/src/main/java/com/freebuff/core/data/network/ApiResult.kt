@@ -61,7 +61,16 @@ sealed class ApiError(message: String, cause: Throwable? = null) : Exception(mes
     /** 调用方主动取消。 */
     class Cancelled : ApiError("请求已取消")
 
-    class Unknown(cause: Throwable? = null) : ApiError(cause?.message ?: "请求失败", cause)
+    /**
+     * 未归类的异常。
+     * 无 message 的异常(典型:[android.os.NetworkOnMainThreadException] —— 忘了把阻塞请求切到 IO
+     * 线程)必须把异常类型写出来,否则界面只剩一句「请求失败」,既看不出原因也看不出方向。
+     */
+    class Unknown(cause: Throwable? = null) : ApiError(
+        cause?.message?.takeIf { it.isNotBlank() }
+            ?: "请求失败(" + (cause?.javaClass?.simpleName ?: "未知错误") + ")",
+        cause,
+    )
 
     /** 兼容旧调用:等价于 [message] 的非空字符串。 */
     val userMessage: String get() = message ?: "请求失败"

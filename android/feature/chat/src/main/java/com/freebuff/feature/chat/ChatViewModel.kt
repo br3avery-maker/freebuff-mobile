@@ -30,12 +30,14 @@ import com.freebuff.core.model.MemoryExtraction
 import com.freebuff.core.model.MemoryRecallCodec
 import com.freebuff.core.model.MemoryStore
 import com.freebuff.core.model.MsgStep
+import com.freebuff.core.model.MsgSteps
 import com.freebuff.core.model.OfficialModel
 import com.freebuff.core.model.Session
 import com.freebuff.core.model.Subagent
 import com.freebuff.core.model.ToolCard
 import com.freebuff.core.model.ToolPermission
 import com.freebuff.core.model.ToolPermissions
+import com.freebuff.core.model.ToolRepeatTracker
 import com.freebuff.core.model.fmtT
 import com.freebuff.core.model.mergedModelList
 import com.freebuff.core.model.uid
@@ -160,6 +162,9 @@ class ChatViewModel @Inject constructor(
 
         /** 诊断日志开关:排查「后段消息不落库」这类流式写库时序问题时打开,定位后可关。 */
         const val LOG_DB_TRACE = true
+
+        /** 比对正文/参数是否「同一段话」时用:忽略空白差异。 */
+        val WHITESPACE_RE = Regex("\\s+")
 
         /** 记忆提取提示词:严格 JSON,便于端侧解析入库。 */
         const val EXTRACT_PROMPT = """从本轮用户消息中提取值得长期记住的信息:用户偏好与习惯、关键事实与约定、任务进度。
@@ -287,8 +292,8 @@ class ChatViewModel @Inject constructor(
         val target = resolveTarget()
         val userMsg = ChatMsg(uid(), "user", text = text, time = fmtT(System.currentTimeMillis()),
             ctxRepo = ctxRepo, ctxModel = ctxModel)
-        val agentMsg = ChatMsg(uid(), "agent", text = "", time = "正在生成",
-            steps = listOf(MsgStep("连接", "连接模型并开始生成…")))
+        val agentMsg = ChatMsg(uid(), "agent", text = "", time = MsgSteps.GENERATING,
+            steps = listOf(MsgStep(MsgSteps.CONNECT, "连接模型并开始生成…")))
         viewModelScope.launch {
             val session = sessionRepo.get(sessionId) ?: return@launch
             // 会话确认存在后才清输入框,避免向导提交被会话失效吞字
@@ -305,6 +310,8 @@ class ChatViewModel @Inject constructor(
                 // 本次流式操作归属的会话:停止/确认回写都靠它定位(此处必须赋值)
                 streamSessionId = session.id
                 _streaming.value = true
+                // 连续失败计数每轮重置:它只用来在同一轮内从「按建议重试」升级为「换路」
+                toolFailStreak.clear()
                 try {
                     if (!target.isConfigured) {
                         updateAgentText(session.id, noModelMessage())
@@ -314,32 +321,89 @@ class ChatViewModel @Inject constructor(
                         // 时提醒继续;模型调用 task_completed 才算完成;轮次上限只是兜底。
                         var toolRounds = 0
                         var nudges = 0
+                        var userStopped = false // 本轮是被用户停止中断的(收尾要给停止标注)
+                        var repeatRounds = 0 // 连续「整轮都在重复调用」的轮数
+                        var lastRoundText = "" // 上一轮已写进正文的文本(用于去掉重复追加)
+                        val repeats = ToolRepeatTracker()
                         val protocol = mutableListOf<ChatMessage>() // 跨轮累积:assistant(tool_calls)+tool 结果(严格协议)
                         while (true) {
                             val roundText = StringBuilder() // 本轮流式输出的文本(回传时作为 assistant content)
                             if (LOG_DB_TRACE) Log.i(TAG, "round ${toolRounds + 1} start sid=${session.id.takeLast(6)}")
-                            val base = buildHistory(session.id, ctxRepo, target)
-                            // 工具可用性:用户开关 + 本会话是否已被端点拒过工具(拒绝后本轮继续纯对话,不再反复碰壁)
+                            // 状态牌:让用户看到在第几轮、在做什么(实测多轮工具调用时界面会长时间无反馈)
+                            setProgressStep(session.id, MsgSteps.round(toolRounds + 1), MsgSteps.calling(emptyList()))
+                            // 工具可用性:用户开关 + 本会话是否已被端点拒过工具(拒绝后本轮继续纯对话,不再反复碰壁)。
+                            // 先算出来再建上下文:系统提示里的「工具使用约定」要与本轮是否真的附带 tools 一致
                             val useTools = toolsEnabled && toolsRejectedSession != session.id
+                            val base = buildHistory(session.id, ctxRepo, target, useTools)
                             val calls = runStreamRound(
                                 session.id, target, base + protocol,
                                 toolsJson = if (useTools) DefaultTools.toJsonArrayString(activeTools()) else "",
                                 textSink = roundText,
                             )
                             if (calls == null) {
-                                // 用户停止:外层操作协程已随之被取消,这里只是取消前的常规出口
+                                // 用户停止:外层操作协程已随之被取消,这里只是取消前的常规出口。
+                                // 这里同样要带上「用户停止」:两条收尾路径的执行顺序不定(实测相差 30ms),
+                                // 否则后跑的那条会把已经写好的停止标注覆盖成空正文。
+                                userStopped = true
                                 if (LOG_DB_TRACE) Log.i(TAG, "round stopped-by-user sid=${session.id.takeLast(6)} round=${toolRounds + 1}")
                                 break
                             }
                             val completed = calls.any { it.name in com.freebuff.core.model.AgentLoop.END_TOOLS }
+                            var repeatedThisRound = 0
+                            val roundDigest = mutableListOf<Pair<String, String>>() // 本轮的「工具 → 结果首行」
                             if (calls.isNotEmpty()) {
                                 toolRounds++
                                 // 执行工具;结果写入工具卡片(UI)+ 压缩后进入协议消息(下一轮请求)
                                 protocol += ChatMessage.assistantWithCalls(roundText.toString(), calls)
+                                val calledNames = mutableListOf<String>()
                                 for (c in calls) {
-                                    val outcome = dispatchTool(session.id, c)
-                                    completeToolCard(session.id, c.callId, outcome.content, outcome.isError)
+                                    // 调用轨迹:记工具名 + 原始参数 JSON。卡片里存的是给人看的参数摘要
+                                    // (query/url/path 这类只剩值、丢了键名),回归脚本读卡片分不清
+                                    // 「参数名写错」和「摘要只留了值」,所以这里留一行原样可解析的记录。
+                                    if (LOG_DB_TRACE) Log.i(
+                                        TAG,
+                                        "tool req sid=${session.id.takeLast(6)} round=$toolRounds " +
+                                            "name=${c.name} args=${c.argsJson.take(200)}",
+                                    )
+                                    val sig = repeats.signature(c)
+                                    val cached = repeats.cachedOutput(sig)
+                                    val outcome = if (cached != null) {
+                                        // 完全相同的调用:复用上次结果,不重新执行(某些模型会把同一组工具整轮重放)。
+                                        // 结果虽已复用,仍要告诉模型「别重发」——模型重放是本项目实测过的主要循环之一。
+                                        repeatedThisRound++
+                                        com.freebuff.core.model.ToolOutcome(
+                                            com.freebuff.core.model.ToolErrors.duplicateNote(c.name, cached),
+                                        )
+                                    } else {
+                                        dispatchTool(session.id, c).also { r ->
+                                            // 连续失败计数:同一工具第 2 次失败起,错误信封会劝它换路而不是继续重试
+                                            if (r.isError) toolFailStreak[c.name] = (toolFailStreak[c.name] ?: 0) + 1
+                                            else toolFailStreak.remove(c.name)
+                                            repeats.remember(sig, r.content)
+                                        }
+                                    }
+                                    completeToolCard(
+                                        session.id, c.callId, outcome.content, outcome.isError,
+                                        reused = cached != null,
+                                    )
                                     protocol += ChatMessage.toolResult(c.callId, ContextPolicy.compressToolResult(outcome.content))
+                                    calledNames += c.name
+                                    roundDigest += com.freebuff.core.model.toolDisplayName(c.name) to outcome.content
+                                }
+                                setProgressStep(session.id, MsgSteps.round(toolRounds), MsgSteps.calling(calledNames))
+                                if (repeatRounds > 0 || repeatedThisRound > 0) {
+                                    Log.i(TAG, "repeat sid=${session.id.takeLast(6)} round=$toolRounds dup=$repeatedThisRound/${calls.size} consecutive=$repeatRounds")
+                                }
+                            }
+                            // 整轮都是重复调用才算「原地打转」;换参数/换工具都算新进展
+                            repeatRounds = if (calls.isNotEmpty() && repeatedThisRound == calls.size) repeatRounds + 1 else 0
+                            // 模型重放时会把同一段话再吐一遍:去掉刚追加进去的重复段落
+                            val roundStr = roundText.toString()
+                            if (roundStr.isNotBlank()) {
+                                if (normText(roundStr) == normText(lastRoundText)) {
+                                    removeTrailingText(session.id, roundStr)
+                                } else {
+                                    lastRoundText = roundStr
                                 }
                             }
                             val decision = com.freebuff.core.model.AgentLoop.decide(
@@ -348,23 +412,31 @@ class ChatViewModel @Inject constructor(
                                 toolsEnabled = useTools,
                                 nudgesUsed = nudges,
                                 completed = completed,
+                                repeatRounds = repeatRounds,
                             )
                             when (decision) {
                                 com.freebuff.core.model.AgentLoop.Decision.Continue -> Unit
                                 com.freebuff.core.model.AgentLoop.Decision.Stop -> break
                                 is com.freebuff.core.model.AgentLoop.Decision.StopWithNote -> {
-                                    appendAgentText(session.id, decision.note)
+                                    // 模型重放时常常一个字也不说就停了:把本轮的执行结果附在提示里,
+                                    // 否则用户看到的「回复」就是空卡片 + 一句停因(实测存在)
+                                    val note = "\n\n" + decision.note + MsgSteps.digest(roundDigest)
+                                    appendAgentText(session.id, note)
                                     break
                                 }
                                 is com.freebuff.core.model.AgentLoop.Decision.Nudge -> {
                                     // 只进协议消息,不进正文:下一轮模型会看到「继续推进」的要求
                                     nudges++
                                     if (LOG_DB_TRACE) Log.i(TAG, "nudge #$nudges sid=${session.id.takeLast(6)}")
-                                    protocol += ChatMessage.text("system", decision.message)
+                                    // 角色用 user:中途插 system 在 OpenAI 兼容网关上行为不一(见 AgentLoop.REMINDER_ROLE)
+                                    protocol += ChatMessage.text(
+                                        com.freebuff.core.model.AgentLoop.REMINDER_ROLE,
+                                        decision.message,
+                                    )
                                 }
                             }
                         }
-                        finishAgent(session.id)
+                        finishAgent(session.id, stoppedByUser = userStopped)
                         if (LOG_DB_TRACE) Log.i(TAG, "op finish sid=${session.id.takeLast(6)} rounds=$toolRounds")
                     }
                 } catch (t: Throwable) {
@@ -383,8 +455,16 @@ class ChatViewModel @Inject constructor(
                     sessionPermissionMemory.clear()
                 }
                 // 轮次结束后的记忆提取:独立协程执行 —— 它是额外一次 LLM 调用,
-                // 不能让「正在生成」状态与输入框被它拖住(提取失败静默)
-                launch { extractTurnMemories(session.id, target) }
+                // 不能让「正在生成」状态与输入框被它拖住(提取失败静默)。
+                // 同时只允许一次在跑:慢端点下连发多轮时,后台提取会堆积并把前台请求拖慢
+                launch {
+                    if (!extractionLock.tryLock()) return@launch
+                    try {
+                        extractTurnMemories(session.id, target)
+                    } finally {
+                        extractionLock.unlock()
+                    }
+                }
             }
             streamJob = opJob
             opJob.join()
@@ -399,7 +479,7 @@ class ChatViewModel @Inject constructor(
         streamJob?.cancel()
         streamJob = null
         viewModelScope.launch {
-            sid?.let { finishAgent(it) }
+            sid?.let { finishAgent(it, stoppedByUser = true) }
             _streaming.value = false
         }
     }
@@ -414,7 +494,11 @@ class ChatViewModel @Inject constructor(
     private suspend fun handleAgentEvent(sessionId: String, ev: AgentEvent): List<com.freebuff.core.model.ToolCallReq> =
         when (ev) {
             is AgentEvent.Text -> {
-                appendAgentText(sessionId, ev.chunk); emptyList()
+                // 边收边洗:端点会把 chat 模板控制词(<|eos|> 等)当普通文本漏进正文,
+                // 写入/显示前就去掉(收尾还会再洗一次,兼顾被拆到两个 chunk 的半个词)
+                val clean = com.freebuff.core.model.OutputSanitizer.clean(ev.chunk)
+                if (clean.isNotEmpty()) appendAgentText(sessionId, clean)
+                emptyList()
             }
             is AgentEvent.Reasoning -> {
                 // 思考(思维链)增量:单独存一列并折叠展示,不进正文、不进下一轮上下文
@@ -461,14 +545,20 @@ class ChatViewModel @Inject constructor(
         sessionRepo.replaceMessage(sessionId, last.id, last.copy(tools = cards))
     }
 
-    /** 工具收尾:写入输出与终态;无对应卡片时补一张(容错乱序)。 */
-    private suspend fun completeToolCard(sessionId: String, callId: String, output: String, isError: Boolean) {
+    /** 工具收尾:写入输出与终态;无对应卡片时补一张(容错乱序)。reused = 结果复用(未真正执行)。 */
+    private suspend fun completeToolCard(
+        sessionId: String,
+        callId: String,
+        output: String,
+        isError: Boolean,
+        reused: Boolean = false,
+    ) {
         val s = sessionRepo.get(sessionId) ?: return
         val last = s.messages.lastOrNull { it.role == "agent" } ?: return
         val cards = last.tools.toMutableList()
         val idx = cards.indexOfFirst { it.callId == callId }
         val updated = (cards.getOrNull(idx) ?: ToolCard(callId = callId, tool = "tool"))
-            .copy(output = output, state = if (isError) "error" else "done")
+            .copy(output = output, state = when { reused -> "reused"; isError -> "error"; else -> "done" })
         if (idx >= 0) cards[idx] = updated else cards += updated
         sessionRepo.replaceMessage(sessionId, last.id, last.copy(tools = cards))
     }
@@ -505,7 +595,12 @@ class ChatViewModel @Inject constructor(
      * 构建请求上下文:记忆块 + 会话历史,经 ContextBuilder 预算裁剪与压缩。
      * 每轮循环重建一次 —— 工具结果落库后,下一轮自动进入上下文。
      */
-    private suspend fun buildHistory(sessionId: String, ctxRepo: String, target: ChatTarget): List<ChatMessage> {
+    private suspend fun buildHistory(
+        sessionId: String,
+        ctxRepo: String,
+        target: ChatTarget,
+        toolsEnabled: Boolean = true,
+    ): List<ChatMessage> {
         val s = sessionRepo.get(sessionId)
         val msgs = s?.messages.orEmpty().dropLast(1) // 最后一条是占位 agent 消息,不进上下文
         val budget = ContextBudget(contextWindow = ContextPolicy.parseCtxWindow(target.ctxWindow))
@@ -519,6 +614,7 @@ class ChatViewModel @Inject constructor(
                 )
             }.getOrDefault("")
         } else ""
+        // 摘要缓存:同一会话内被裁段没明显变多就复用上次的摘要,不再重复调 LLM 摘要
         val built = contextBuilder.build(
             memoryBlocks = if (memoryEnabled) memoryRepo.load() else emptyList(),
             session = msgs,
@@ -526,23 +622,45 @@ class ChatViewModel @Inject constructor(
             summarize = llmSummarizer(target),
             workingMemory = workingMemory,
             userId = MemoryStore.LOCAL_USER_ID,
+            cachedSummary = summaryCache[sessionId],
+            toolsEnabled = toolsEnabled,
         )
+        built.summary?.let {
+            summaryCache[sessionId] = com.freebuff.core.data.context.CachedSummary(built.summaryCoverage, it)
+        }
         _contextStats.value = built.stats
         val out = built.messages.toMutableList()
         if (ctxRepo.isNotBlank()) {
-            // 任务向导携带的仓库上下文:插在 system 之后,不落库
-            out.add(1, ChatMessage.text("system", "本次任务关联仓库:$ctxRepo"))
+            // 任务向导携带的仓库上下文:追加进首条 system 提示,而不是插一条新的 system 消息
+            // (OpenAI 兼容网关惯例把 system 当首条,中途再插一条行为不一)
+            out[0] = ChatMessage.text(
+                "system",
+                out[0].content + "\n\n本次任务关联仓库:" + ctxRepo,
+            )
         }
         return out
     }
+
+    /** 会话 → 最近一次生成的早期上下文摘要(长会话里避免每轮都重新摘要)。 */
+    private val summaryCache = HashMap<String, com.freebuff.core.data.context.CachedSummary>()
+
+    /**
+     * 工具名 → 本轮会话内连续失败次数。
+     * 用途只有一个:同一工具第 2 次失败时,错误信封从「按建议重试」升级为「换路或告知用户」——
+     * 弱模型很容易拿着同一个错参数反复撞(业界共识是有界自纠:重试一两次就应该换策略)。
+     */
+    private val toolFailStreak = HashMap<String, Int>()
+
+    /** 记忆提取串行锁:同一时刻只跑一次,已在跑则跳过本轮(记忆是尽力而为)。 */
+    private val extractionLock = kotlinx.coroutines.sync.Mutex()
 
     /**
      * LLM 摘要压缩执行器(LibreChat 式):把被裁掉的早期消息交给模型生成摘要。
      * 复用流式管道收集文本;失败由调用方回退提取式摘要。
      */
-    private fun llmSummarizer(target: ChatTarget): (suspend (List<com.freebuff.core.data.context.ContextTurn>) -> String)? {
+    private fun llmSummarizer(target: ChatTarget): (suspend (List<com.freebuff.core.data.context.ContextTurn>, String?) -> String)? {
         if (!target.isConfigured) return null
-        return { turns ->
+        return { turns, previous ->
             val convo = turns.joinToString("\n") { t ->
                 (if (t.role == "agent") "助手" else "用户") + ":" +
                     t.text.take(800) +
@@ -556,8 +674,16 @@ class ChatViewModel @Inject constructor(
                 headers = target.headers,
                 skipTLS = target.skipTLS,
                 history = listOf(
-                    ChatMessage.text("system", "把以下对话压缩成简洁摘要,保留:用户的最终目标、已确定的关键决策、重要数据与结论、尚未完成的事项。直接输出摘要正文,不要客套。"),
-                    ChatMessage.text("user", convo.take(24000)),
+                    ChatMessage.text(
+                        "system",
+                        "把以下对话压缩成简洁摘要,保留:用户的最终目标、已确定的关键决策、重要数据与结论、尚未完成的事项。" +
+                            "若已给出【已有摘要】,它是更早部分的压缩,请把它与新内容合并成一份连贯摘要。直接输出摘要正文,不要客套。",
+                    ),
+                    ChatMessage.text(
+                        "user",
+                        (if (previous.isNullOrBlank()) "" else "【已有摘要】\n" + previous.take(4000) + "\n\n") +
+                            "【需要压缩的对话】\n" + convo.take(24000),
+                    ),
                 ),
             ).collect { ev ->
                 if (ev is com.freebuff.core.model.AgentEvent.Text) sb.append(ev.chunk)
@@ -574,19 +700,36 @@ class ChatViewModel @Inject constructor(
         sessionId: String,
         c: com.freebuff.core.model.ToolCallReq,
     ): com.freebuff.core.model.ToolOutcome {
+        // 这是该工具连续第几次失败(第 2 次起，信封从「按建议重试」升级为「换路」)
+        val attempt = (toolFailStreak[c.name] ?: 0) + 1
+        // 当前会话真正可用的工具集:关掉记忆能力时不含记忆工具,未知名字的建议据此生成
+        val available = activeTools()
         // 占位分派(P0 协议层已注册工具,执行引擎未上线):不执行、不弹权限确认,
         // 直接回填说明文本让模型自行完成子任务;同时预热模型的调用形态,P1 上线后无缝切换
         if (c.name == Subagent.TOOL_NAME) {
             return com.freebuff.core.model.ToolOutcome(Subagent.comingSoonMessage())
         }
+        // 未知工具名直接回错误结果(带近邻建议):它无法执行,弹确认只会卡住循环、白点一次「允许」(实测浏览工具幻觉)
+        if (!com.freebuff.core.model.DefaultTools.isKnown(c.name, available)) {
+            return com.freebuff.core.model.ToolOutcome(
+                com.freebuff.core.model.ToolErrors.unknownTool(
+                    c.name, com.freebuff.core.model.DefaultTools.names(available),
+                ),
+                isError = true,
+            )
+        }
         when (ToolPermissions.effective(c.name, permissionOverridesState.value)) {
             ToolPermission.DENY ->
-                return com.freebuff.core.model.ToolOutcome("该工具已被用户禁用;请勿重复调用,可换其他方式或向用户说明。", isError = true)
+                return com.freebuff.core.model.ToolOutcome(
+                    com.freebuff.core.model.ToolErrors.disabledByUser(c.name), isError = true,
+                )
             ToolPermission.CONFIRM -> {
                 // 会话内已记住本工具的决定(「本次会话记住选择」):免弹窗直接按记忆执行/拒绝
                 sessionPermissionMemory.get(c.name)?.let { remembered ->
                     if (remembered == ToolPermission.DENY) {
-                        return com.freebuff.core.model.ToolOutcome("用户已选择本次会话内不再执行该工具;请勿重复调用,可换其他方式或向用户说明。", isError = true)
+                        return com.freebuff.core.model.ToolOutcome(
+                            com.freebuff.core.model.ToolErrors.deniedByUser(c.name), isError = true,
+                        )
                     }
                 }
                 // 卡片置 waiting;await 真挂起等用户决定,停止对话(取消协程)会直接中断。
@@ -597,15 +740,17 @@ class ChatViewModel @Inject constructor(
                 _pendingConfirmation.value = pending
                 val granted = pending.deferred.await()
                 if (!granted) {
-                    return com.freebuff.core.model.ToolOutcome("用户拒绝执行该工具;请勿重复调用,可换其他方式或向用户说明。", isError = true)
+                    return com.freebuff.core.model.ToolOutcome(
+                        com.freebuff.core.model.ToolErrors.deniedByUser(c.name), isError = true,
+                    )
                 }
             }
             ToolPermission.ALLOW -> Unit
         }
         return when (c.name) {
-            "save_memory" -> executeSaveMemory(c)
-            "memory_recall" -> executeMemoryRecall(c)
-            else -> tools.execute(c)
+            "save_memory" -> executeSaveMemory(c, attempt)
+            "memory_recall" -> executeMemoryRecall(c, attempt)
+            else -> tools.execute(c, available, attempt)
         }
     }
 
@@ -621,10 +766,31 @@ class ChatViewModel @Inject constructor(
      * memory_recall 工具端侧执行:按 user_id/query/top_k/memory_type 检索记忆库。
      * 参数缺失或非法时回传明确错误(模型可修正后重试);非本机 user_id 命中为空时回退本机记忆。
      */
-    private suspend fun executeMemoryRecall(c: com.freebuff.core.model.ToolCallReq): com.freebuff.core.model.ToolOutcome {
+    private suspend fun executeMemoryRecall(
+        c: com.freebuff.core.model.ToolCallReq,
+        attempt: Int = 1,
+    ): com.freebuff.core.model.ToolOutcome {
         val a = MemoryRecallCodec.parse(c.argsJson)
-        if (a.userId.isBlank()) return com.freebuff.core.model.ToolOutcome("检索失败:缺少 user_id 参数", isError = true)
-        if (a.query.isBlank()) return com.freebuff.core.model.ToolOutcome("检索失败:缺少 query 参数", isError = true)
+        val recallTool = com.freebuff.core.model.DefaultTools.find("memory_recall")
+        val example = recallTool?.example.orEmpty()
+        if (a.userId.isBlank()) {
+            return com.freebuff.core.model.ToolOutcome(
+                com.freebuff.core.model.ToolErrors.report(
+                    com.freebuff.core.model.ToolErrors.Kind.MISSING_PARAM, "memory_recall",
+                    "缺少 user_id", "user_id 填系统提示里给出的当前用户 id", attempt, example,
+                ),
+                isError = true,
+            )
+        }
+        if (a.query.isBlank()) {
+            return com.freebuff.core.model.ToolOutcome(
+                com.freebuff.core.model.ToolErrors.report(
+                    com.freebuff.core.model.ToolErrors.Kind.MISSING_PARAM, "memory_recall",
+                    "缺少 query", "query 写你要查的事(如「回答长度偏好」)", attempt, example,
+                ),
+                isError = true,
+            )
+        }
         return try {
             var hits = memoryEntryRepo.search(a.query, a.topK, a.memoryType, userId = a.userId)
             var note = ""
@@ -681,12 +847,22 @@ class ChatViewModel @Inject constructor(
     }
 
     /** save_memory 工具端侧执行:写入记忆块,返回给模型的确认文案。 */
-    private suspend fun executeSaveMemory(c: com.freebuff.core.model.ToolCallReq): com.freebuff.core.model.ToolOutcome {
+    private suspend fun executeSaveMemory(
+        c: com.freebuff.core.model.ToolCallReq,
+        attempt: Int = 1,
+    ): com.freebuff.core.model.ToolOutcome {
         val a = MemoryCodec.parseSaveArgs(c.argsJson)
         return try {
             com.freebuff.core.model.ToolOutcome(memoryRepo.applySave(a.block, a.content, a.replace))
         } catch (e: Exception) {
-            com.freebuff.core.model.ToolOutcome("保存记忆失败:" + (e.message ?: e::class.java.simpleName), isError = true)
+            com.freebuff.core.model.ToolOutcome(
+                com.freebuff.core.model.ToolErrors.internalError(
+                    "save_memory",
+                    "保存记忆失败:" + (e.message ?: e::class.java.simpleName),
+                    attempt,
+                ),
+                isError = true,
+            )
         }
     }
 
@@ -757,7 +933,7 @@ class ChatViewModel @Inject constructor(
             sessionId, last.id,
             last.copy(
                 time = "⟳ 第 " + (retry + 1) + "/" + (RetryPolicy.MAX_RETRIES + 1) + " 次尝试",
-                steps = last.steps + MsgStep("重试 " + retry, "上次失败:" + lastError + ";退避后自动重试"),
+                steps = last.steps + MsgStep(MsgSteps.retry(retry), "上次失败:" + lastError + ";退避后自动重试"),
             ),
         )
     }
@@ -790,15 +966,64 @@ class ChatViewModel @Inject constructor(
         sessionRepo.replaceMessage(sessionId, last.id, last.copy(text = text, time = fmtT(System.currentTimeMillis())))
     }
 
-    private suspend fun finishAgent(sessionId: String) {
+    private suspend fun finishAgent(sessionId: String, stoppedByUser: Boolean = false) {
         val s = sessionRepo.get(sessionId) ?: return
         val last = s.messages.lastOrNull { it.role == "agent" } ?: return
+        if (LOG_DB_TRACE) {
+            Log.i(
+                TAG,
+                "finish sid=${sessionId.takeLast(6)} stopped=$stoppedByUser textLen=${last.text.length} " +
+                    "cards=${last.tools.size} running=${last.tools.count { it.isRunning }}",
+            )
+        }
         // 流结束时仍在 running 的卡片 = 未等到 tool_result(流提前结束/用户停止),标记未完成
         val cards = if (last.tools.any { it.isRunning }) {
             last.tools.map { if (it.isRunning) it.copy(state = "error", output = "(未完成)") else it }
         } else last.tools
-        sessionRepo.replaceMessage(sessionId, last.id, last.copy(text = last.text, tools = cards, time = fmtT(System.currentTimeMillis())))
+        // 收尾统一洗一次正文:去掉端点漏出的 chat 模板控制词(如 <|eos|>),
+        // 并补上两种「空回复」的说明 —— 用户停止、模型什么都没说(实测都会留下空白气泡)
+        val cleaned = com.freebuff.core.model.OutputSanitizer.clean(last.text)
+        val finalText = when {
+            stoppedByUser -> MsgSteps.stoppedText(cleaned)
+            cleaned.isBlank() && cards.isEmpty() -> MsgSteps.EMPTY_REPLY_NOTE
+            else -> cleaned
+        }
+        sessionRepo.replaceMessage(
+            sessionId, last.id,
+            last.copy(
+                text = finalText,
+                tools = cards,
+                // 过程性步骤(连接/第 N 轮)是临时状态牌:收尾必须清掉,
+                // 否则对话结束后会一直挂着「连接模型并开始生成…」(实测残留)
+                steps = MsgSteps.withoutTransient(last.steps),
+                time = fmtT(System.currentTimeMillis()),
+            ),
+        )
     }
+
+    /** 更新状态牌的过程步骤:始终只留一个(不堆积),历史性步骤(重试)保持原样。 */
+    private suspend fun setProgressStep(sessionId: String, name: String, sub: String) {
+        val s = sessionRepo.get(sessionId) ?: return
+        val last = s.messages.lastOrNull { it.role == "agent" } ?: return
+        val steps = MsgSteps.withoutTransient(last.steps) + MsgStep(name, sub)
+        if (steps != last.steps) {
+            sessionRepo.replaceMessage(sessionId, last.id, last.copy(steps = steps))
+        }
+    }
+
+    /** 本轮正文与上一轮完全相同时,把刚追加进消息的这段重复删掉(模型重放场景)。 */
+    private suspend fun removeTrailingText(sessionId: String, text: String) {
+        val s = sessionRepo.get(sessionId) ?: return
+        val last = s.messages.lastOrNull { it.role == "agent" } ?: return
+        val t = last.text
+        if (text.isNotBlank() && t.endsWith(text)) {
+            Log.i(TAG, "dedupe sid=${sessionId.takeLast(6)} drop=${text.length}")
+            sessionRepo.replaceMessage(sessionId, last.id, last.copy(text = t.dropLast(text.length)))
+        }
+    }
+
+    /** 比对正文是否「同一段话」:忽略空白差异。 */
+    private fun normText(s: String): String = s.trim().replace(WHITESPACE_RE, " ")
 
     /** 失败收尾:追加错误文案而非覆盖 —— 保留前面轮次已生成的内容与重试轨迹;时间由随后的 finishAgent 落定。 */
     private suspend fun failAgent(sessionId: String, reason: String) {

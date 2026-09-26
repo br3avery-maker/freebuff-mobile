@@ -3,8 +3,11 @@ package com.freebuff.core.data.tools
 import com.freebuff.core.data.network.ApiError
 import com.freebuff.core.data.network.FreebuffApi
 import com.freebuff.core.model.AgentLoop
+import com.freebuff.core.model.AgentTool
+import com.freebuff.core.model.DefaultTools
 import com.freebuff.core.model.JsonArgs
 import com.freebuff.core.model.ToolCallReq
+import com.freebuff.core.model.ToolErrors
 import com.freebuff.core.model.ToolOutcome
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -30,25 +33,48 @@ class ToolExecutors @Inject constructor(
     private val io: CoroutineDispatcher = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
 
     /**
-     * 单次执行入口。未知工具 → 错误结果;执行异常 → 错误结果(绝不抛向调用方)。
+     * 单次执行入口。
      *
-     * 参数先过一层宽容解析([JsonArgs],整个链路只做这一次):
-     * - 空参数(Anthropic 经兼容层对无参工具发 `""`)归一为 `{}`,否则 `JSONObject("")` 抛异常、
-     *   无参工具永远执行不了(vercel/ai#6687);
-     * - 栅栏/尾逗号/单引号等手写瑕疵自动修复;
-     * - 实在修不好:回一条「参数不是合法 JSON」给模型(可自愈重试),而不是报个看不懂的异常。
+     * 给模型的每一次回应都要带「下一步怎么改」,顺序如下:
+     * 1. **工具名**必须在当前可用清单里(未注册的名字给近邻建议,见 [ToolErrors.unknownTool]);
+     * 2. **宽容解析参数**([JsonArgs],整个链路只做这一次):空参数(Anthropic 经兼容层对无参工具发 `""`)
+     *    归一为 `{}`(否则 `JSONObject("")` 抛异常、无参工具永远执行不了 — vercel/ai#6687);
+     *    栅栏/尾逗号/单引号等手写瑕疵自动修复;修不好则回「不是合法 JSON」+ 正确调用示例;
+     * 3. **参数体检 + 归一**([DefaultTools.prepare]):未知参数名 / 缺必填 / 越界 / 取值不在闭集 →
+     *    有处方的信封;别名与类型顺手归一到规范形;
+     * 4. 真正执行;任何异常都变成有处方的错误信封 —— 绝不抛给调用方,也绝不把堆栈丢给模型。
+     *
+     * @param tools 当前会话可用工具集(记忆关闭时不含记忆工具),未知名字的提示据此生成
+     * @param attempt 同一工具在本轮会话里连续第几次失败(≥2 时信封劝「换路」而不是重试)
      */
-    suspend fun execute(call: ToolCallReq): ToolOutcome = withContext(io) {
-        val args = when (val r = JsonArgs.parse(call.argsJson)) {
-            is JsonArgs.Result.Ok -> r.obj.toString()
-            is JsonArgs.Result.Invalid ->
-                return@withContext ToolOutcome(
-                    "参数不是合法 JSON(工具 " + call.name + "):" + r.reason +
-                        "。收到的是:" + r.raw.take(200) + "。请修正后重试。",
-                    isError = true,
-                )
+    suspend fun execute(
+        call: ToolCallReq,
+        tools: List<AgentTool> = DefaultTools.ALL,
+        attempt: Int = 1,
+    ): ToolOutcome = withContext(io) {
+        val tool = DefaultTools.find(call.name, tools)
+            ?: return@withContext ToolOutcome(
+                ToolErrors.unknownTool(call.name, DefaultTools.names(tools)),
+                isError = true,
+            )
+        val raw = when (val r = JsonArgs.parse(call.argsJson)) {
+            is JsonArgs.Result.Ok -> r.obj
+            is JsonArgs.Result.Invalid -> return@withContext ToolOutcome(
+                ToolErrors.report(
+                    ToolErrors.Kind.INVALID_ARGS, tool.name,
+                    "参数不是合法 JSON:" + r.reason + ";收到的是:" + r.raw.take(120),
+                    "按说明书重发一次:参数必须是 JSON 对象",
+                    attempt, tool.example,
+                ),
+                isError = true,
+            )
         }
-        try {
+        val (argsObj, problems) = DefaultTools.prepare(tool, raw)
+        if (problems.isNotEmpty()) {
+            return@withContext ToolOutcome(ToolErrors.forProblems(tool, problems, attempt), isError = true)
+        }
+        val args = argsObj.toString()
+        val outcome = try {
             when (call.name) {
                 "web_search" -> webSearch(args)
                 "web_fetch" -> webFetch(args)
@@ -58,14 +84,60 @@ class ToolExecutors @Inject constructor(
                 "calculator" -> calculator(args)
                 "current_time" -> ToolOutcome(currentTime())
                 AgentLoop.COMPLETION_TOOL -> completion(args)
-                else -> ToolOutcome("未知工具:" + call.name + "。可用工具见系统提示。", isError = true)
+                else -> ToolOutcome(ToolErrors.unknownTool(call.name, DefaultTools.names(tools)), isError = true)
             }
-        } catch (e: ApiError) {
-            ToolOutcome("工具执行失败:" + e.userMessage, isError = true)
         } catch (e: Exception) {
-            ToolOutcome("工具执行失败:" + (e.message ?: e::class.java.simpleName), isError = true)
+            errorFor(tool.name, e, attempt)
+        }
+        // 统一兜底:任何错误分支在「同一工具第 2 次失败」时都要劝换路(各分支不一定拿得到计数)
+        if (outcome.isError) {
+            outcome.copy(content = ToolErrors.escalateIfNeeded(outcome.content, attempt))
+        } else {
+            outcome
         }
     }
+
+    /**
+     * 工具失败 → 有处方的错误信封:
+     * HTTP 状态码分开给下一步(401/403 别重试、404 先核对名字、429 等一会儿、5xx 可重试一次),
+     * 超时与其它异常也有各自的处方;堆栈只进日志、不进模型上下文。
+     */
+    private fun errorFor(tool: String, e: Throwable, attempt: Int): ToolOutcome {
+        // 工具特有的下一步建议:通用处方之外再给一条「怎么找对目标」
+        val hint = when (tool) {
+            "github_get_file", "github_get_readme" ->
+                "先核对 owner/repo/path:可用 github_search_repositories 搜到正确仓库名"
+            "web_fetch" -> "链接可能已失效或站点拒绝抓取:换一个来源,或先用 web_search 找新链接"
+            "github_search_repositories" -> "搜索接口不可用时可改用 web_search 查该项目主页"
+            else -> ""
+        }
+        val envelope = when (e) {
+            is ApiError.Http -> ToolErrors.http(tool, e.code, e.body.take(160), attempt, hint)
+            is ApiError.Timeout -> ToolErrors.report(
+                ToolErrors.Kind.NETWORK, tool, "请求超时",
+                "等一会儿重试一次;仍超时就换其它来源或直接告诉用户没取到", attempt,
+            )
+            is ApiError.NotConfigured -> ToolErrors.report(
+                ToolErrors.Kind.INTERNAL, tool, e.userMessage,
+                "该能力当前不可用(缺少配置);换其它工具完成", attempt,
+            )
+            else -> ToolErrors.internalError(
+                tool,
+                ((e as? ApiError)?.userMessage ?: e.message ?: e::class.java.simpleName).take(160),
+                attempt,
+            )
+        }
+        return ToolOutcome(envelope, isError = true)
+    }
+
+    /** 兜底:必填参数缺失(正常路径由 [DefaultTools.validate] 拦住,这里防执行器被单独调用)。 */
+    private fun missing(tool: String, param: String): ToolOutcome = ToolOutcome(
+        ToolErrors.report(
+            ToolErrors.Kind.MISSING_PARAM, tool, "必填参数 " + param + " 缺失",
+            "补上 " + param + " 后重试一次", 1, DefaultTools.find(tool)?.example.orEmpty(),
+        ),
+        isError = true,
+    )
 
     /**
      * 任务完成声明:模型用它在目标达成后结束本轮循环(Cline 的 attempt_completion 同构)。
@@ -84,7 +156,7 @@ class ToolExecutors @Inject constructor(
 
     private fun webSearch(argsJson: String): ToolOutcome {
         val q = JSONObject(argsJson).optString("query").trim()
-        if (q.isEmpty()) return ToolOutcome("缺少参数 query", isError = true)
+        if (q.isEmpty()) return missing("web_search", "query")
         val req = Request.Builder()
             .url("https://api.duckduckgo.com/?q=" + urlEncode(q) + "&format=json&no_html=1&skip_disambig=1")
             .header("User-Agent", FreebuffApi.USER_AGENT)
@@ -117,9 +189,17 @@ class ToolExecutors @Inject constructor(
 
     private fun webFetch(argsJson: String): ToolOutcome {
         val url = JSONObject(argsJson).optString("url").trim()
-        if (url.isEmpty()) return ToolOutcome("缺少参数 url", isError = true)
+        if (url.isEmpty()) return missing("web_fetch", "url")
         if (!url.startsWith("http://") && !url.startsWith("https://")) {
-            return ToolOutcome("url 需以 http(s):// 开头", isError = true)
+            return ToolOutcome(
+                ToolErrors.report(
+                    ToolErrors.Kind.BAD_VALUE, "web_fetch",
+                    "url「" + url.take(80) + "」缺少协议头",
+                    "url 必须以 http:// 或 https:// 开头", 1,
+                    "web_fetch({\"url\": \"https://example.com/post\"})",
+                ),
+                isError = true,
+            )
         }
         val req = Request.Builder().url(url)
             .header("User-Agent", FreebuffApi.USER_AGENT)
@@ -136,7 +216,7 @@ class ToolExecutors @Inject constructor(
     private fun ghSearchRepos(argsJson: String): ToolOutcome {
         val a = JSONObject(argsJson)
         val q = a.optString("query").trim()
-        if (q.isEmpty()) return ToolOutcome("缺少参数 query", isError = true)
+        if (q.isEmpty()) return missing("github_search_repositories", "query")
         val limit = a.optInt("limit", 5).coerceIn(1, 10)
         val req = Request.Builder()
             .url("https://api.github.com/search/repositories?q=" + urlEncode(q) + "&per_page=" + limit)
@@ -167,7 +247,16 @@ class ToolExecutors @Inject constructor(
         val repo = a.optString("repo").trim()
         val path = a.optString("path").trim()
         if (owner.isBlank() || repo.isBlank() || path.isBlank()) {
-            return ToolOutcome("缺少参数 owner/repo/path", isError = true)
+            val absent = listOf("owner" to owner, "repo" to repo, "path" to path)
+                .filter { it.second.isBlank() }.joinToString("、") { it.first }
+            return ToolOutcome(
+                ToolErrors.report(
+                    ToolErrors.Kind.MISSING_PARAM, "github_get_file", "必填参数 " + absent + " 缺失",
+                    "owner / repo / path 三个都要给(仓库名与文件路径分开写)", 1,
+                    DefaultTools.find("github_get_file")?.example.orEmpty(),
+                ),
+                isError = true,
+            )
         }
         val ref = a.optString("ref").trim()
         val url = buildString {
@@ -180,7 +269,14 @@ class ToolExecutors @Inject constructor(
         client.newCall(req).execute().use { r ->
             val text = r.body?.string().orEmpty()
             if (!r.isSuccessful) {
-                return ToolOutcome("读取文件失败(HTTP " + r.code + "):" + owner + "/" + repo + "/" + path, isError = true)
+                return ToolOutcome(
+                    ToolErrors.http(
+                        "github_get_file", r.code, "", 1,
+                        hint = "核对 " + owner + "/" + repo + "/" + path +
+                            " 是否写错;仓库名可用 github_search_repositories 搜",
+                    ),
+                    isError = true,
+                )
             }
             return ToolOutcome(text.take(4000))
         }
@@ -190,7 +286,7 @@ class ToolExecutors @Inject constructor(
         val a = JSONObject(argsJson)
         val owner = a.optString("owner").trim()
         val repo = a.optString("repo").trim()
-        if (owner.isBlank() || repo.isBlank()) return ToolOutcome("缺少参数 owner/repo", isError = true)
+        if (owner.isBlank() || repo.isBlank()) return missing("github_get_readme", "owner/repo")
         return ghGetFile(
             JSONObject().put("owner", owner).put("repo", repo).put("path", "README.md").toString(),
         )
@@ -201,7 +297,7 @@ class ToolExecutors @Inject constructor(
     /** 四则运算:递归下降解析,避免 eval 类安全/兼容问题。 */
     private fun calculator(argsJson: String): ToolOutcome {
         val expr = JSONObject(argsJson).optString("expression").trim()
-        if (expr.isEmpty()) return ToolOutcome("缺少参数 expression", isError = true)
+        if (expr.isEmpty()) return missing("calculator", "expression")
         return try {
             val v = CalcParser(expr).parse()
             val out = if (v == Math.floor(v) && !v.isInfinite() && Math.abs(v) < 1e15) {
@@ -211,7 +307,15 @@ class ToolExecutors @Inject constructor(
             }
             ToolOutcome(expr + " = " + out)
         } catch (e: Exception) {
-            ToolOutcome("计算失败:表达式「" + expr + "」无法解析(支持 + - * / 与括号)", isError = true)
+            ToolOutcome(
+                ToolErrors.report(
+                    ToolErrors.Kind.BAD_VALUE, "calculator",
+                    "表达式「" + expr.take(60) + "」无法解析",
+                    "只支持数字与 + - * / 与括号;换一个合法算式重试", 1,
+                    "calculator({\"expression\": \"(12+8)*3.5\"})",
+                ),
+                isError = true,
+            )
         }
     }
 

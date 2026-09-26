@@ -234,7 +234,7 @@ scripts/gradle.sh :app:signingReport
 ```
 
 预期包信息:`package name='com.freebuff.mobile'`,且 `versionCode`/`versionName` 与 `version.properties` 一致
-(当前 `2` / `1.0.0`),minSdk 26 / targetSdk 35。
+(当前 `3` / `0.0.2`),minSdk 26 / targetSdk 35。
 
 ## 6. R8 混淆注意事项
 

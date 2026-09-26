@@ -1,11 +1,21 @@
 package com.freebuff.core.model
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** 工具权限分级:默认值、编解码、合法化。 */
 class ToolPermissionsTest {
+
+    @Test
+    fun `注册表能识别工具名,未知名字要挡住`() {
+        // 实测场景:模型凭空造出 `browse_web` —— 它执行不了,不该弹权限确认
+        assertTrue(DefaultTools.isKnown("calculator"))
+        assertTrue(DefaultTools.isKnown("memory_recall"))
+        assertFalse(DefaultTools.isKnown("browse_web"))
+        assertFalse(DefaultTools.isKnown(""))
+    }
 
     @Test
     fun `只读工具默认免确认 写入类默认需确认`() {

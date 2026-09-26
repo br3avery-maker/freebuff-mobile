@@ -34,7 +34,12 @@ object ToolPermissions {
     /** settings 表存储键。 */
     const val SETTINGS_KEY = "toolPermissions"
 
-    /** 未知工具的兜底分级:宁可多问一次,不静默执行。 */
+    /**
+     * 未分级工具(在注册表里、但本表没登记)的兜底:宁可多问一次,不静默执行。
+     *
+     * 注意:连注册表都没有的工具名不会走到这里 —— 执行入口用 `DefaultTools.isKnown`
+     * 先挡住(未知名字执行不了,弹确认只会卡住循环),见 docs/backend-integration.md §3.3.5。
+     */
     val FALLBACK: ToolPermission = ToolPermission.CONFIRM
 
     /** 各工具的默认分级(按副作用强度)。 */

@@ -15,9 +15,13 @@ import com.freebuff.core.model.ChatTarget
 import com.freebuff.core.model.CustomModel
 import com.freebuff.core.model.Probe
 import com.freebuff.core.model.modelsUrl
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import okhttp3.Request
 import org.json.JSONObject
 import javax.inject.Inject
@@ -28,10 +32,14 @@ import javax.inject.Singleton
  * 所有阻塞式 HTTP 调用统一经 [apiCallIo] 切到 IO 线程并归一化错误。
  */
 @Singleton
-class CustomModelRepository @Inject constructor(
+class CustomModelRepository internal constructor(
     private val dao: FreebuffDao,
     private val crypto: CryptoManager,
+    /** 阻塞式请求的执行线程。测试传入可观测 dispatcher,断言「确实切出了调用线程」。 */
+    private val io: CoroutineDispatcher,
 ) {
+    @Inject
+    constructor(dao: FreebuffDao, crypto: CryptoManager) : this(dao, crypto, Dispatchers.IO)
     /** 加密存储、解密展示;进入内存后为明文。 */
     private fun decryptEntity(e: com.freebuff.core.data.db.CustomModelEntity): CustomModel =
         e.toDomain().copy(key = crypto.decrypt(e.keyCipher))
@@ -170,11 +178,16 @@ class CustomModelRepository @Inject constructor(
     /** 解析自定义请求头 JSON → 键值。 */
     fun resolveHeaders(headers: String): Map<String, String> = parseHeaders(headers)
 
-    /** 探测包装:失败时返回 [ProbeResult.Fail](含分类文案与状态码),成功返回 null。 */
-    private inline fun runCatchingProbe(block: () -> Unit): ProbeResult.Fail? = try {
-        block()
+    /**
+     * 探测包装:在 [io] 上执行阻塞请求(在 Main 上会直接抛无 message 的
+     * NetworkOnMainThreadException,界面只能看到兜底的「请求失败」),
+     * 失败时返回 [ProbeResult.Fail](含分类文案与状态码),成功返回 null。
+     */
+    private suspend inline fun runCatchingProbe(crossinline block: () -> Unit): ProbeResult.Fail? = try {
+        withContext(io) { block() }
         null
     } catch (t: Throwable) {
+        if (t is CancellationException) throw t
         val err = t.toApiError()
         ProbeResult.Fail(err.userMessage, (err as? ApiError.Http)?.code)
     }

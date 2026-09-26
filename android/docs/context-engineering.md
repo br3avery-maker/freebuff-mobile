@@ -8,7 +8,7 @@
 sendMessage(text)
    │
    ▼
-┌─────────────── agent 循环(最多 6 轮)───────────────┐
+┌────────────── agent 循环(最多 30 轮,只当兜底)──────┐
 │  buildHistory(sessionId)                            │
 │    ├─ MemoryRepository.load()   ← Room memories 表  │
 │    ├─ ContextBuilder.build(                         │
@@ -16,8 +16,9 @@ sendMessage(text)
 │    │     session 消息,     // Room messages         │
 │    │     ContextBudget(     // 按模型 ctx 窗口算    │
 │    │       parseCtxWindow), │                     │
-│    │     llmSummarizer)     // LibreChat 式摘要     │
-│    │   → system(记忆+人设) [+摘要] [近端消息…]     │
+│    │     llmSummarizer,     // LibreChat 式摘要     │
+│    │     cachedSummary)     // 会话级摘要复用       │
+│    │   → system(记忆+人设+早期摘要) [近端消息…]     │
 │    └─ + protocol 跨轮累积(assistant/tool 消息)      │
 │  runStreamRound() → SSE → 事件                      │
 │  有 tool_calls? → 执行(save_memory/外部工具)       │
@@ -27,13 +28,16 @@ sendMessage(text)
 
 每轮请求都**重建**上下文:工具结果落库(工具卡片)后自动出现在下一轮;记忆块始终注入 system;预算超限时自动压缩。
 
+摘要不进独立消息,而是拼进**首条 system**(`parts[0]`):OpenAI 兼容网关普遍把 system 当首条处理,
+中途再插一条 system 各家行为不一。
+
 ## 2. 借鉴映射
 
 | 机制 | 借鉴来源 | 本工程落点 |
 |---|---|---|
 | 核心记忆块(命名块常驻 system,agent 自编辑) | Letta/MemGPT core memory blocks | `MemoryBlock`(persona/user/project)+ `save_memory` 工具 + Room `memories` 表 |
 | 检索式记忆(按查询 Top K 注入 + 工具化召回) | MemGPT archival memory / OpenAI memory 工具化 | `MemoryEntry` + `MemoryEntryRepository` + `memory_recall` 工具 + Room `memory_entries` 表 |
-| 会话摘要压缩(超限把早期消息换摘要) | LibreChat conversation summarization;Cline auto-compact | `ContextBuilder.build` 裁剪 + `llmSummarizer`(非流式摘要调用) |
+| 会话摘要压缩(超限把早期消息换摘要) | LibreChat conversation summarization;Cline auto-compact | `ContextBuilder.build` 裁剪 + `llmSummarizer`(非流式摘要调用,可带【已有摘要】合并) + `cachedSummary`(会话级缓存,被裁段每多 4 轮才重算) |
 | 摘要失败的降级 | LibreChat 提取式回退 | `ContextPolicy.extractiveSummary`(首条用户请求 + 最新进展) |
 | 工具结果有损压缩(保留首尾) | Cline 机械压缩思想 | `ContextPolicy.compressToolResult`(单条 1200 token 上限) |
 | token 预算 = 窗口 − 输出预留 | OpenAI/Anthropic 常规实践 | `ContextBudget.usableTokens`(reserveOutput=4096) |
@@ -42,8 +46,9 @@ sendMessage(text)
 
 ## 3. 关键规则
 
-- **永不丢弃**:system(含记忆块)与 `[早期对话摘要]` 消息在兜底淘汰中受保护。
-- **摘要只做一次**:被裁段生成一条摘要消息,不逐轮重复压缩;下轮重建时被裁段不变则摘要内容一致(确定性:同输入同输出,LLM 摘要除外)。
+- **永不丢弃**:首条 system(含记忆块与早期摘要)在兜底淘汰(`parts.removeAt(1)`)中受保护 —— 裁剪永远不会动 `parts[0]`。
+- **摘要写进首条 system,且按增长步长重算**:`SUMMARY_GROWTH_STEP = 4` —— 被裁段比上次摘要多覆盖不到 4 轮时直接复用会话级缓存(`ChatViewModel.summaryCache`),不重复调 LLM;确实变多时把【已有摘要】一起交给模型合并成一份连贯摘要。
+  为什么:实测每轮都重新摘要会在长会话里白烧一次额外请求(与主请求同量级的延迟),而摘要内容又几乎不变。
 - **工具结果双重压缩**:执行后回传给模型前压一次(`ContextPolicy.compressToolResult`),历史序列化进上下文时再按上限压一次。
 - **save_memory 由能力开关控制**:设置页「上下文记忆」关闭时,工具列表移除 `save_memory`(`DefaultTools.forCapabilities`),记忆块也不注入——模型不会看到不可用的工具。
 - **记忆限额**:单块默认 600 字符,超限截断并提示模型用 save_memory 精炼;save_memory 追加超限时保留头部 + 追加段。
@@ -54,7 +59,22 @@ sendMessage(text)
 - `ContextPolicyTest`:估算/窗口解析/压缩/预算
 - `MemoryTest`:编解码往返/prompt 渲染/限额/save_memory 参数/能力过滤
 - `MemoryRepositoryTest`:播种/覆盖/追加压缩/清空(内存假 DAO)
-- `ContextBuilderTest`:记忆注入/工作记忆注入/工具结果压缩/裁剪+摘要/LLM 摘要与失败回退/空会话
+- `ContextBuilderTest`:记忆注入/工作记忆注入/工具结果压缩/裁剪+摘要(摘要在首条 system)/LLM 摘要与失败回退/空会话/摘要覆盖轮数
+- `SessionRepositoryTest`:会话删除与撤销;冷启动修复半条消息(空正文→中断提示、过程性步骤清除、未跑完的工具卡片标未完成、幂等)
+
+## 5. 长会话实测(8k 窗口压到极限)
+
+`verify/longsession.py 14`(脚本 + 报告 `verify/longsession_report.md`):设备模型 ctx 设为 `8k`,连发 14 轮
+(每轮都要求回复足够长,逼出裁剪),逐轮记录请求规模与耗时。结果:
+
+| 指标 | 实测 |
+|---|---|
+| 轮次 / 失败 | 14 轮全部 `ok` |
+| 单轮端到端 | 19.8 – 29.9 s |
+| 进入请求的消息条数 | 最多 21(不随轮数线性增长 → 裁剪生效) |
+| system 段字符数 | 最多 561(摘要并入首条 system 后仍未失控) |
+| 摘要调用次数 | **1 次**(14 轮只在被裁段明显变多时重算了一次;改动前是每轮一次) |
+| 摘要出现位置 | 请求里 4 次命中首条 system 含摘要标记 |
 - `MemoryEntryTest`:分词/相关度排序/类型归一化/memory_recall 参数/注入格式/提取解析容错
 - `MemoryEntryRepositoryTest`:写入可检索/去重刷新/类型过滤/热度累加/容量淘汰/用户隔离
 

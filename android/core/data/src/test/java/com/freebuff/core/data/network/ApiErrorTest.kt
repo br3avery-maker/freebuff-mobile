@@ -102,6 +102,15 @@ class ApiErrorTest {
     }
 
     @Test
+    fun `无 message 的异常在文案里自证类型`() {
+        // NetworkOnMainThreadException(阻塞请求忘了切线程)就是无 message 的:只写「请求失败」
+        // 等于把排查线索丢掉 —— 兜底文案必须把异常类型带出来
+        val e = IllegalStateException().toApiError()
+        assertTrue(e is ApiError.Unknown)
+        assertEquals("请求失败(IllegalStateException)", e.userMessage)
+    }
+
+    @Test
     fun `mapChatError 等价于分类文案`() {
         assertEquals("无法解析主机,请检查端点地址", mapChatError(UnknownHostException("x")))
         assertEquals("鉴权失败(401):请检查 API Key", mapChatError(RuntimeException("any"), 401))

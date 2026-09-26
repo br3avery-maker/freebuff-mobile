@@ -189,6 +189,8 @@ handleSteps: function* ({ model, contextPruning }) {
 |---|---|
 | `ChatRepository.chatStream`(SSE 增量) | 文本增量事件;未来扩展时按 §4 事件类型分发 |
 | `ApiError` 分类 + `userMessage` | 后端 error 事件文案;解析失败/HTTP/超时与后端归因对齐 |
+| `DefaultTools`(说明书 + schema + 参数体检)| §1 工具注册表(“定义 + 处理器”两半):定义那半就是给模型看的说明书,闭集用 enum、数值给上下界、必填只标工具推不出来的 |
+| `ToolErrors` 错误信封 | §2.1 解析与容错 + “帮错误当 observation 回填”的业界共识:错误要可行、带示例(见 `docs/backend-integration.md` §3.3.5) |
 | `ModelCatalogRepository`(网关 `/v1/models`) | 模型即 agent 运行时的 `model` 字段;目录接口返回的 id 与后端 `CONTEXT_WINDOWS` 表对应 |
 | 会话标题/消息持久化(Room) | `messageHistory` 是后端权威;App 本地为缓存与离线展示,恢复会话以服务端为准 |
 

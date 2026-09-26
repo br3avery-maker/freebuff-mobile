@@ -5,6 +5,7 @@ import com.freebuff.core.model.ContextBudget
 import com.freebuff.core.model.ContextPolicy
 import com.freebuff.core.model.MemoryBlock
 import com.freebuff.core.model.ToolCard
+import com.freebuff.core.model.ToolErrors
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -81,8 +82,8 @@ class ContextBuilderTest {
         )
         assertTrue("应发生压缩 stats=" + built.stats, built.stats.didCompact)
         assertTrue(
-            "应保留摘要 stats=" + built.stats + " parts=" + built.messages.map { it.role + ":" + it.content.take(30) },
-            built.messages.any { it.content.startsWith(ContextBuilder.SUMMARY_MARK) },
+            "摘要应写进首条 system 提示 stats=" + built.stats,
+            built.messages.first().content.contains(ContextBuilder.SUMMARY_MARK),
         )
         assertTrue("近端消息应保留", built.messages.count { it.role == "user" || it.role == "assistant" } >= 4)
         // 总量应在预算内
@@ -99,11 +100,14 @@ class ContextBuilderTest {
             memoryBlocks = emptyList(),
             session = session,
             budget = ContextBudget(contextWindow = 4000, reserveOutput = 2000),
-            summarize = { throw RuntimeException("llm down") },
+            summarize = { _, _ -> throw RuntimeException("llm down") },
         )
         assertTrue(built.stats.didCompact)
-        val summary = built.messages.first { it.content.startsWith(ContextBuilder.SUMMARY_MARK) }
+        // 摘要写在 system 提示里(而不是插一条新的 system 消息):中途插 system 各家网关行为不一
+        val summary = built.messages.first()
+        assertTrue("摘要要落在首条 system 提示内", summary.content.contains(ContextBuilder.SUMMARY_MARK))
         assertTrue("回退摘要应含早期请求", summary.content.contains("第 1 轮"))
+        assertTrue("摘要不该作为独立消息出现", built.messages.drop(1).none { it.content.startsWith(ContextBuilder.SUMMARY_MARK) })
     }
 
     @Test
@@ -113,10 +117,12 @@ class ContextBuilderTest {
             memoryBlocks = emptyList(),
             session = session,
             budget = ContextBudget(contextWindow = 4000, reserveOutput = 2000),
-            summarize = { "LLM 生成的摘要" },
+            summarize = { _, _ -> "LLM 生成的摘要" },
         )
-        val summary = built.messages.first { it.content.startsWith(ContextBuilder.SUMMARY_MARK) }
-        assertTrue(summary.content.contains("LLM 生成的摘要"))
+        assertTrue(built.messages.first().content.contains("LLM 生成的摘要"))
+        // 摘要要能被调用方缓存下来(长会话里避免每轮重新摘要)
+        assertEquals("LLM 生成的摘要", built.summary)
+        assertTrue("覆盖条数要回传", built.summaryCoverage > 0)
     }
 
     @Test
@@ -129,6 +135,34 @@ class ContextBuilderTest {
         assertEquals(1, built.messages.size)
         assertEquals("system", built.messages[0].role)
         assertTrue(built.messages[0].content.contains("Freebuff 助手"))
+    }
+
+    @Test
+    fun `带工具时注入工具使用约定 不带时不注入`() = runTest {
+        val session = listOf(msg("user", "现在几点"), msg("agent", "我看看"))
+
+        val on = ContextBuilder().build(
+            memoryBlocks = emptyList(),
+            session = session,
+            budget = ContextBudget(contextWindow = 32000),
+            toolsEnabled = true,
+        )
+        val system = on.messages[0].content
+        assertTrue("要教模型怎么读错误信封", system.contains("## 工具使用约定"))
+        assertTrue(system.contains(ToolErrors.MARK))
+        assertTrue("要说清重试一次就换路", system.contains("换工具"))
+        assertTrue("要禁止自造工具名", system.contains("不要自己造工具名"))
+
+        val off = ContextBuilder().build(
+            memoryBlocks = emptyList(),
+            session = session,
+            budget = ContextBudget(contextWindow = 32000),
+            toolsEnabled = false,
+        )
+        assertTrue(
+            "没带工具定义时不该讲工具用法(否则会诱发幻觉调用)",
+            !off.messages[0].content.contains("## 工具使用约定"),
+        )
     }
 
     private fun com.freebuff.core.model.ContextStats.usableOf(): Int =

@@ -3,10 +3,12 @@ package com.freebuff.core.data.repository
 import com.freebuff.core.data.db.FreebuffDao
 import com.freebuff.core.data.db.MessageEntity
 import com.freebuff.core.data.db.SessionEntity
+import com.freebuff.core.data.db.SettingEntity
 import com.freebuff.core.data.db.SessionWithMessages
 import com.freebuff.core.data.db.toDomain
 import com.freebuff.core.data.db.toEntity
 import com.freebuff.core.model.ChatMsg
+import com.freebuff.core.model.MsgSteps
 import com.freebuff.core.model.Session
 import com.freebuff.core.model.uid
 import kotlinx.coroutines.flow.Flow
@@ -96,5 +98,42 @@ class SessionRepository @Inject constructor(
     suspend fun clearAll() {
         dao.clearMessages()
         dao.clearSessions()
+    }
+
+    /**
+     * 冷启动修复:上一次进程被杀/崩溃时留在库里的「半条消息」。
+     *
+     * 流式回复边收边写库,所以被杀那一刻的消息会停在半途(空正文、步骤停在「连接模型并开始生成…」、
+     * 工具卡片停在 running/waiting)。**只在进程启动时调用** —— 那时库里不可能有真在写入的消息;
+     * 修复后再落库,历史展示与后续上下文都不再被这条半成品污染(空正文会变成一条空助手轮)。
+     *
+     * 扫多少:首次(本功能上线后的第一次冷启动)全量扫 —— 老版本留下的半成品可能已经被后续消息压在历史中间;
+     * 之后只扫每条会话的**最后一条** —— 进程被杀只可能把最后一条留在半途,没必要每次启动都解析全库 JSON。
+     *
+     * @return 被修复的消息条数(0 = 没有残留)
+     */
+    suspend fun repairAbandonedMessages(): Int {
+        val swept = dao.setting(KEY_REPAIR_SWEPT)?.value == "1"
+        var fixed = 0
+        for (row in dao.allSessions()) {
+            val entities = dao.sessionWithMessages(row.id)?.messages.orEmpty()
+            val targets = if (swept) entities.takeLast(1) else entities
+            val changed = targets.mapNotNull { e ->
+                val msg = e.toDomain()
+                val repaired = MsgSteps.repairAbandoned(msg)
+                if (repaired == msg) null else repaired.toEntity(row.id, e.sort)
+            }
+            if (changed.isNotEmpty()) {
+                dao.upsertMessages(changed)
+                fixed += changed.size
+            }
+        }
+        if (!swept) dao.upsertSetting(SettingEntity(KEY_REPAIR_SWEPT, "1"))
+        return fixed
+    }
+
+    private companion object {
+        /** 内部标记(不是用户可配的设置项):冷启动修复的全量扫描是否已经做过。 */
+        const val KEY_REPAIR_SWEPT = "abandonedRepairSwept"
     }
 }

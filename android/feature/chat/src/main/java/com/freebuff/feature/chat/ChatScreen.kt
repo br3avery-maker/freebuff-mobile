@@ -27,10 +27,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -61,10 +63,43 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
     val modelId by viewModel.modelId.collectAsState()
     val modelList by viewModel.modelList.collectAsState()
     val listState = rememberLazyListState()
-    LaunchedEffect(session?.messages?.size) {
-        if (session != null && session!!.messages.isNotEmpty()) {
-            listState.animateScrollToItem(session!!.messages.size - 1)
+    // 自动跟随滚动。原来的实现只在「消息条数变化」时 animateScrollToItem(末条) ——
+    // 两个问题:(1) 流式输出让末条越来越高时不会跟随,用户得手动往下拽;
+    // (2) 跳到条目顶部,末条一旦比屏幕高,正在写的内容全在屏幕下方看不到。
+    // 现在的规则:只有在用户本来就贴着底部时才跟随(上滑看历史不被打断),
+    // 且滚到列表末尾而非末条顶部。
+    val atBottom by remember(listState) {
+        derivedStateOf {
+            val info = listState.layoutInfo
+            val lastIndex = info.totalItemsCount - 1
+            val last = info.visibleItemsInfo.lastOrNull()
+            last == null || (last.index >= lastIndex && last.offset + last.size <= info.viewportEndOffset + 24)
         }
+    }
+    var follow by remember { mutableStateOf(true) }
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.isScrollInProgress }.collect { scrolling ->
+            // 用户主动滚动且没停在底部 = 想回头看历史,暂停跟随
+            if (scrolling && !atBottom) follow = false
+        }
+    }
+    LaunchedEffect(atBottom) { if (atBottom) follow = true }
+
+    val msgs = session?.messages.orEmpty()
+    val lastMessageSignature = msgs.lastOrNull()?.let {
+        it.text.length * 31 + it.tools.size * 7 + it.steps.size
+    } ?: 0
+    // 新消息:平滑滚到底
+    LaunchedEffect(msgs.size) {
+        if (follow && msgs.isNotEmpty()) listState.animateScrollToItem(msgs.lastIndex, Int.MAX_VALUE)
+    }
+    // 流式增长:直接滚到底(逐块做动画会卡在后面,看不到正在写的字)
+    LaunchedEffect(lastMessageSignature) {
+        if (follow && msgs.isNotEmpty()) listState.scrollToItem(msgs.lastIndex, Int.MAX_VALUE)
+    }
+    LaunchedEffect(streaming) {
+        // 新的一轮生成开始:重新贴回底部(用户刚点了发送)
+        if (streaming && msgs.isNotEmpty()) listState.scrollToItem(msgs.lastIndex, Int.MAX_VALUE)
     }
     val modelName = modelList.firstOrNull { it.id == modelId }?.name.orEmpty()
     val pendingConfirm by viewModel.pendingConfirmation.collectAsState()
@@ -76,7 +111,6 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
             onBack = { navigator.navigate(AppNavState.ROUTE_HOME) },
             onModel = { navigator.openSheet(AppNavState.SHEET_MODEL) },
         )
-        val msgs = session?.messages.orEmpty()
         if (msgs.isEmpty()) {
             ChatEmpty(
                 canPick = session != null,
@@ -421,6 +455,7 @@ private fun ToolCardItem(card: ToolCard, last: Boolean) {
         card.isWaiting -> t.accent
         card.isRunning -> t.accent
         card.isError -> t.danger
+        card.isReused -> t.text3
         else -> t.ok
     }
     val subagent = card.subagentName
@@ -435,7 +470,12 @@ private fun ToolCardItem(card: ToolCard, last: Boolean) {
                     Modifier.size(7.dp).clip(RFull).background(stateColor.copy(alpha = 0.35f + 0.65f * alpha)),
                 )
             } else {
-                Text(if (card.isError) "⚠" else "✓", color = stateColor, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                val glyph = when {
+                    card.isError -> "⚠"
+                    card.isReused -> "↺"
+                    else -> "✓"
+                }
+                Text(glyph, color = stateColor, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
             Spacer(Modifier.width(7.dp))
             if (subagent != null) {
@@ -452,6 +492,7 @@ private fun ToolCardItem(card: ToolCard, last: Boolean) {
                     card.isWaiting -> "待确认"
                     card.isRunning -> "运行中"
                     card.isError -> "失败"
+                    card.isReused -> "复用"
                     else -> "完成"
                 },
                 color = stateColor, fontSize = 10.sp, fontWeight = FontWeight.Medium,

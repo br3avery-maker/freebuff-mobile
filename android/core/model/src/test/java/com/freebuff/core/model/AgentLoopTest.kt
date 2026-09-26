@@ -60,6 +60,50 @@ class AgentLoopTest {
         )
     }
 
+    // ---------- 重复调用(原地打转) ----------
+    @Test
+    fun `整轮重复调用先提醒一次`() {
+        val d = AgentLoop.decide(
+            toolRounds = 3, toolCalls = 3, toolsEnabled = true, nudgesUsed = 0, repeatRounds = 1,
+        )
+        assertTrue("首轮重复应先提醒,实际 $d", d is AgentLoop.Decision.Nudge)
+        assertTrue((d as AgentLoop.Decision.Nudge).message.contains(AgentLoop.COMPLETION_TOOL))
+    }
+
+    @Test
+    fun `继续重复就直接停并给出可见提示`() {
+        val d = AgentLoop.decide(
+            toolRounds = 4, toolCalls = 3, toolsEnabled = true, nudgesUsed = 1,
+            repeatRounds = AgentLoop.MAX_REPEAT_ROUNDS,
+        )
+        assertTrue("再重复应停下,实际 $d", d is AgentLoop.Decision.StopWithNote)
+        val note = (d as AgentLoop.Decision.StopWithNote).note
+        assertTrue(note.contains("重复调用"))
+        assertTrue(note.contains("继续"))
+    }
+
+    @Test
+    fun `声明完成优先于重复检测`() {
+        assertEquals(
+            AgentLoop.Decision.Stop,
+            AgentLoop.decide(
+                toolRounds = 4, toolCalls = 3, toolsEnabled = true, nudgesUsed = 0,
+                completed = true, repeatRounds = 3,
+            ),
+        )
+    }
+
+    @Test
+    fun `换参数或换工具后重复计数归零(由调用方重置)`() {
+        // repeatRounds = 0 表示本轮有新进展:按正常工具轮继续
+        assertEquals(
+            AgentLoop.Decision.Continue,
+            AgentLoop.decide(
+                toolRounds = 4, toolCalls = 2, toolsEnabled = true, nudgesUsed = 2, repeatRounds = 0,
+            ),
+        )
+    }
+
     @Test
     fun `轮次上限兜底并给出可见提示`() {
         val d = AgentLoop.decide(
