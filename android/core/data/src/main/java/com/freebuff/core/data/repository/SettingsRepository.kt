@@ -3,7 +3,7 @@ package com.freebuff.core.data.repository
 import com.freebuff.core.data.db.FreebuffDao
 import com.freebuff.core.data.db.SettingEntity
 import com.freebuff.core.model.GitState
-import com.freebuff.core.model.LATEST_VERSION
+import com.freebuff.core.model.Reasoning
 import com.freebuff.core.model.ToolPermission
 import com.freebuff.core.model.ToolPermissions
 import kotlinx.coroutines.flow.Flow
@@ -16,7 +16,7 @@ import org.json.JSONObject
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** 应用级键值设置(主题/当前模型/解析模式/版本/Git 状态/登录态)。 */
+/** 应用级键值设置(主题/当前模型/解析模式/Git 状态/登录态)。 */
 @Singleton
 class SettingsRepository @Inject constructor(
     private val dao: FreebuffDao,
@@ -25,7 +25,6 @@ class SettingsRepository @Inject constructor(
         const val KEY_THEME_MODE = "themeMode"
         const val KEY_MODEL_ID = "modelId"
         const val KEY_REPO_PARSE = "repoParse"
-        const val KEY_VERSION = "version"
         const val KEY_SIGNED_IN = "signedIn"
         const val KEY_GIT = "git"
 
@@ -34,6 +33,9 @@ class SettingsRepository @Inject constructor(
 
         /** 上下文记忆开关(Letta 式记忆块注入 + save_memory 自编辑)。 */
         const val KEY_MEMORY_ENABLED = "memoryEnabled"
+
+        /** 深度思考(思维链)模式:off / auto / on,取值见 core:model 的 Reasoning。 */
+        const val KEY_REASONING_MODE = "reasoningMode"
 
         /** 工具权限映射(工具名 → allow/confirm/deny,JSON;见 ToolPermissions)。 */
         const val KEY_TOOL_PERMISSIONS = ToolPermissions.SETTINGS_KEY
@@ -97,9 +99,9 @@ class SettingsRepository @Inject constructor(
 
     // ---------- 便捷访问 ----------
     val themeMode = getStringFlow(KEY_THEME_MODE, "dark")
-    val modelId = getStringFlow(KEY_MODEL_ID, "deepseek-v4-flash")
+    // 默认空 = 尚未选择模型(官方模型来自网关实时目录,自定义模型由用户添加)
+    val modelId = getStringFlow(KEY_MODEL_ID, "")
     val repoParse = getStringFlow(KEY_REPO_PARSE, "strict")
-    val version = getStringFlow(KEY_VERSION, LATEST_VERSION)
     val signedIn = getStringFlow(KEY_SIGNED_IN, "false").map { it.toBoolean() }
 
     /** 工具调用开关:开启后对话请求携带工具定义,模型可触发 function calling(默认开)。 */
@@ -107,6 +109,9 @@ class SettingsRepository @Inject constructor(
 
     /** 上下文记忆开关:开启后注入核心记忆块并允许模型 save_memory(默认开)。 */
     val memoryEnabled = getStringFlow(KEY_MEMORY_ENABLED, "true").map { it.toBoolean() }
+
+    /** 深度思考(思维链)模式:默认自动 —— 按模型名识别思考参数,不认识的模型不送字段。 */
+    val reasoningMode = getStringFlow(KEY_REASONING_MODE, Reasoning.MODE_AUTO)
 
     /** 工具权限覆写(仅用户显式改过的工具;生效分级 = 覆写 ∪ 默认,见 ToolPermissions.effective)。 */
     val toolPermissionOverrides = getStringFlow(KEY_TOOL_PERMISSIONS, "")
@@ -121,6 +126,8 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setMemoryEnabled(v: Boolean) = setBool(KEY_MEMORY_ENABLED, v)
 
+    suspend fun setReasoningMode(mode: String) = setString(KEY_REASONING_MODE, mode)
+
     /** 写入单工具的权限覆写;与默认一致时清除条目(设置回归默认,存储保持最小)。 */
     suspend fun setToolPermission(tool: String, p: ToolPermission) {
         val cur = ToolPermissions.decode(getString(KEY_TOOL_PERMISSIONS, "")).toMutableMap()
@@ -130,6 +137,4 @@ class SettingsRepository @Inject constructor(
 
     /** 清空全部权限覆写(恢复默认分级)。 */
     suspend fun resetToolPermissions() = setString(KEY_TOOL_PERMISSIONS, "")
-    suspend fun setVersion(v: String) = setString(KEY_VERSION, v)
-    suspend fun applyUpdate() = setString(KEY_VERSION, LATEST_VERSION)
 }

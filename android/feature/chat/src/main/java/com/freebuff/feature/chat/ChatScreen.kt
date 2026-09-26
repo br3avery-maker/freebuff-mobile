@@ -326,6 +326,11 @@ private fun AgentBody(m: ChatMsg, isStreaming: Boolean, onCopy: (String) -> Unit
             Spacer(Modifier.height(8.dp))
             ToolCards(m.tools)
         }
+        // 思考过程(思维链):流式期间展开、生成完成后自动收起 —— 与正文分开展示,复制正文不带它
+        if (m.reasoning.isNotBlank()) {
+            Spacer(Modifier.height(8.dp))
+            ReasoningBlock(m.reasoning, live = isStreaming)
+        }
         if (m.text.isNotBlank()) {
             // 真实流式回复写入 text;历史演示消息走 md/code/md2 结构化渲染
             Spacer(Modifier.height(8.dp))
@@ -363,6 +368,35 @@ private fun AgentBody(m: ChatMsg, isStreaming: Boolean, onCopy: (String) -> Unit
                     modifier = Modifier.clip(RoundedCornerShape(7.dp)).clickable { onCopy(payload) }
                         .padding(horizontal = 8.dp, vertical = 4.dp))
             }
+        }
+    }
+}
+
+/**
+ * 思考过程块:模型输出的思维链单独折叠展示。
+ * 流式期间展开(能看着它想),生成结束后自动收起,想细看再点开。
+ */
+@Composable
+private fun ReasoningBlock(text: String, live: Boolean) {
+    val t = LocalTokens.current
+    // 以 live 为 key:流结束(或换消息)时重建为收起态
+    var expanded by remember(live) { mutableStateOf(live) }
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(t.surface2)
+            .clickable { expanded = !expanded }.padding(horizontal = 10.dp, vertical = 8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("✦", color = t.text3, fontSize = 11.sp)
+            Text(
+                if (live) " 思考中…" else " 已深度思考 · 点开查看",
+                color = t.text3, fontSize = 11.5.sp, fontWeight = FontWeight.Medium,
+            )
+            Spacer(Modifier.weight(1f))
+            Text(if (expanded) "⌃" else "⌄", color = t.text3, fontSize = 12.sp)
+        }
+        if (expanded) {
+            Spacer(Modifier.height(6.dp))
+            Text(text, color = t.text2, fontSize = 11.5.sp, lineHeight = 17.sp)
         }
     }
 }
@@ -504,7 +538,8 @@ private fun Composer(
             Text("@", color = t.text2, fontSize = 15.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { onTool("@") }
                     .padding(horizontal = 8.dp, vertical = 6.dp))
-            Text("📎", color = t.text2, fontSize = 13.sp,
+            // 📎 是彩色 emoji,浅色主题下实测 2.3:1;改用能跟着主题色的文档字形
+            Text("▤", color = t.text2, fontSize = 13.sp,
                 modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { onTool("@文件") }
                     .padding(horizontal = 6.dp, vertical = 6.dp))
         }
@@ -514,7 +549,8 @@ private fun Composer(
                 modifier = Modifier.clip(RFull).clickable { onStop() }.padding(horizontal = 12.dp, vertical = 9.dp))
         } else {
             val canSend = input.isNotBlank()
-            Text("发送", color = if (canSend) t.accentInk else t.text3,
+            // 禁用态压在同色系浅底上:text3 在深色主题只有 4.4:1,统一用 text2 保证 ≥5:1
+            Text("发送", color = if (canSend) t.accentInk else t.text2,
                 fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.clip(RFull)
                     .background(if (canSend) t.accent else t.surface3)

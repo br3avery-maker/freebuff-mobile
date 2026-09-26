@@ -17,7 +17,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MemoryEntity::class,
         MemoryEntryEntity::class,
     ],
-    version = 4,
+    version = 6,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -66,13 +66,33 @@ abstract class FreebuffDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v5:sessions 增加 createdAt(创建时刻),会话列表按它分「今天/昨天/7 天内/更早」。
+         * 存量行默认 0,分桶时归入「更早」——旧版本没有记过时间,不能编造。
+         */
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE sessions ADD COLUMN createdAt INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        /**
+         * v6:messages 增加 reasoning(模型输出的思考/思维链内容)。
+         * 单独一列而非塞进正文:思考内容不进后续请求上下文,也不进「复制正文」。
+         */
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages ADD COLUMN reasoning TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun get(context: Context): FreebuffDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext,
                 FreebuffDatabase::class.java,
                 "freebuff.db",
             )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 .build().also { instance = it }
         }
     }

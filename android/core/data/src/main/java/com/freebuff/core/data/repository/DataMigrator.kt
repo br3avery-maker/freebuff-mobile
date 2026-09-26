@@ -3,14 +3,11 @@ package com.freebuff.core.data.repository
 import android.content.SharedPreferences
 import com.freebuff.core.data.db.CustomModelEntity
 import com.freebuff.core.data.db.FreebuffDao
-import com.freebuff.core.data.db.MessageEntity
-import com.freebuff.core.data.db.SessionEntity
 import com.freebuff.core.data.db.SettingEntity
 import com.freebuff.core.data.db.toEntity
 import com.freebuff.core.data.security.CryptoManager
 import com.freebuff.core.model.CustomModel
 import com.freebuff.core.model.RepairReport
-import com.freebuff.core.model.SEED_SESSIONS
 import com.freebuff.core.model.Probe
 import com.freebuff.core.model.sanitizeCustomModels
 import org.json.JSONArray
@@ -21,7 +18,7 @@ import javax.inject.Singleton
  * 一次性迁移器:把 v1 概念版的 SharedPreferences("freebuff_proto_v1") 迁移到 Room。
  * - customModels: 解析旧 JSON → sanitize 清洗 → Keystore 加密 key → 落库
  * - 设置键(themeMode/modelId/repoParse/version/signedIn/git) 平移
- * - 会话表为空时灌入 SEED_SESSIONS
+ * - 清理历史演示会话(旧版首启灌入的 s1/s2/s3),不再灌入任何示例数据
  */
 @Singleton
 class DataMigrator @Inject constructor(
@@ -31,17 +28,26 @@ class DataMigrator @Inject constructor(
     companion object {
         /** 一次性迁移完成标志。写入后不再重放迁移。 */
         const val KEY_MIGRATED = "migrated_v2"
+
+        /** 历史演示会话清理标志(与迁移标志分开,保证已升级过的安装也会被清一次)。 */
+        const val KEY_DEMO_PURGED = "demo_sessions_purged"
+
+        /**
+         * 旧版首启灌入的演示会话 id。真实会话 id 由 uid() 生成(id+随机),
+         * 因此这几个固定 id 可以安全删除,不会误删用户数据。
+         */
+        val LEGACY_DEMO_SESSION_IDS = listOf("s1", "s2", "s3")
     }
 
     /**
      * 一次性迁移,返回修复报告(仅当清洗过程修复过脏数据)。
      *
      * 已迁移过([KEY_MIGRATED] 为 true)时直接返回 null 且不触碰任何数据。
-     * 这个守卫是必需的:迁移里含「会话表为空则灌入演示会话」与「用旧偏好覆写设置键」,
-     * 若每次冷启动都重放,会导致清空会话后重启时演示会话复活,以及主题/模型/自定义模型
-     * 被旧偏好回滚。
+     * 这个守卫是必需的:迁移里含「用旧偏好覆写设置键」,
+     * 若每次冷启动都重放,会导致主题/模型/自定义模型被旧偏好回滚。
      */
     suspend fun migrate(legacy: SharedPreferences): RepairReport? {
+        purgeLegacyDemoSessions(legacy)
         if (legacy.getBoolean(KEY_MIGRATED, false)) return null
 
         var report: RepairReport? = null
@@ -63,7 +69,6 @@ class DataMigrator @Inject constructor(
             SettingsRepository.KEY_THEME_MODE,
             SettingsRepository.KEY_MODEL_ID,
             SettingsRepository.KEY_REPO_PARSE,
-            SettingsRepository.KEY_VERSION,
             SettingsRepository.KEY_SIGNED_IN,
             SettingsRepository.KEY_GIT,
         )
@@ -73,22 +78,18 @@ class DataMigrator @Inject constructor(
             }
         }
 
-        // 3. 首启灌入演示会话
-        if (dao.allSessions().isEmpty()) {
-            seedSessions()
-        }
-
         legacy.edit().putBoolean(KEY_MIGRATED, true).apply()
         return report
     }
 
-    private suspend fun seedSessions() {
-        var sort = 0L
-        SEED_SESSIONS.forEach { session ->
-            dao.upsertSession(SessionEntity(session.id, session.title, session.time, session.preview, ++sort))
-            val msgs = session.messages.mapIndexed { i, m -> m.toEntity(session.id, i.toLong()) }
-            dao.upsertMessages(msgs)
-        }
+    /**
+     * 清理旧版灌入的演示会话(仅固定 id s1/s2/s3)。
+     * 独立于 [KEY_MIGRATED] 守卫:已经迁移过的安装也会被清一次,且只清一次。
+     */
+    private suspend fun purgeLegacyDemoSessions(legacy: SharedPreferences) {
+        if (legacy.getBoolean(KEY_DEMO_PURGED, false)) return
+        LEGACY_DEMO_SESSION_IDS.forEach { id -> dao.deleteSession(id) }
+        legacy.edit().putBoolean(KEY_DEMO_PURGED, true).apply()
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.freebuff.core.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Embedded
 import androidx.room.Entity
 import androidx.room.Index
@@ -16,7 +17,10 @@ import com.freebuff.core.model.ToolCard
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** 会话表。sort 为列表展示顺序(新会话在前)。 */
+/**
+ * 会话表。sort 为列表展示顺序(新会话在前),createdAt 为创建时刻(epoch ms)。
+ * createdAt=0 表示 v4 之前落库、没有时间戳的会话:列表分组时归入「更早」,不猜时间。
+ */
 @Entity(tableName = "sessions")
 data class SessionEntity(
     @PrimaryKey val id: String,
@@ -24,9 +28,11 @@ data class SessionEntity(
     val time: String,
     val preview: String,
     val sort: Long,
+    // 列默认值必须与 MIGRATION_4_5 的 ALTER 一致:存量行补 0,Room 迁移后校验才通得过
+    @ColumnInfo(defaultValue = "0") val createdAt: Long = 0L,
 )
 
-/** 消息表。sort 为会话内顺序;steps/tools 等结构化字段用 JSON 文本存储。 */
+/** 消息表。sort 为会话内顺序;steps/tools 等结构化字段用 JSON 文本存储;reasoning 为思考(思维链)内容。 */
 @Entity(tableName = "messages")
 data class MessageEntity(
     @PrimaryKey val id: String,
@@ -43,6 +49,8 @@ data class MessageEntity(
     val ctxRepo: String,
     val ctxModel: String,
     val toolsJson: String,
+    // 列默认值必须与 MIGRATION_5_6 的 ALTER 一致:存量行补空串,Room 迁移后校验才通得过
+    @ColumnInfo(defaultValue = "") val reasoning: String = "",
 )
 
 /** 自定义模型表。key 为加密后的密文,models/probe 为 JSON 文本。 */
@@ -109,12 +117,13 @@ data class SessionWithMessages(
 
 /* ---------------- 领域对象 <-> 实体 映射 ---------------- */
 
-fun SessionEntity.toDomain(messages: List<ChatMsg>) = Session(id, title, time, preview, messages)
+fun SessionEntity.toDomain(messages: List<ChatMsg>) =
+    Session(id, title, time, preview, messages, createdAt)
 
-fun Session.toEntity(sort: Long) = SessionEntity(id, title, time, preview, sort)
+fun Session.toEntity(sort: Long) = SessionEntity(id, title, time, preview, sort, createdAt)
 
 fun MessageEntity.toDomain(): ChatMsg = ChatMsg(
-    id = id, role = role, text = text, time = time,
+    id = id, role = role, text = text, reasoning = reasoning, time = time,
     steps = JsonCodec.stepsFromJson(stepsJson),
     md = md, codeLang = codeLang, code = code, md2 = md2,
     ctxRepo = ctxRepo, ctxModel = ctxModel,
@@ -123,6 +132,7 @@ fun MessageEntity.toDomain(): ChatMsg = ChatMsg(
 
 fun ChatMsg.toEntity(sessionId: String, sort: Long): MessageEntity = MessageEntity(
     id = id, sessionId = sessionId, sort = sort, role = role, text = text, time = time,
+    reasoning = reasoning,
     stepsJson = JsonCodec.stepsToJson(steps),
     md = md, codeLang = codeLang, code = code, md2 = md2,
     ctxRepo = ctxRepo, ctxModel = ctxModel,

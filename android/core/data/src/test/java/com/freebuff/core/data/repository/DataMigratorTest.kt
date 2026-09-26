@@ -10,7 +10,6 @@ import com.freebuff.core.data.db.MemoryEntity
 import com.freebuff.core.data.db.MemoryEntryEntity
 import com.freebuff.core.data.db.SettingEntity
 import com.freebuff.core.data.security.CryptoManager
-import com.freebuff.core.model.SEED_SESSIONS
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
@@ -22,7 +21,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 一次性迁移器:守卫只执行一次、旧偏好平移、演示会话只灌一次、
+ * 一次性迁移器:守卫只执行一次、旧偏好平移、历史演示会话清理、
  * 非对象条目解析为 drop、空 ID 自动生成。
  *
  * 替身:[FakePrefs] 模拟 SharedPreferences 的最小面(布尔/字符串/编辑器),
@@ -68,23 +67,34 @@ class DataMigratorTest {
     }
 
     @Test
-    fun `清空会话后重启不再复活演示会话`() = runTest {
+    fun `首启不灌入任何示例会话`() = runTest {
         val prefs = FakePrefs()
         val dao = MemDao()
-        val m = DataMigrator(dao, IdentityCrypto())
 
-        // 首启:迁移灌入 3 条演示会话
-        m.migrate(prefs)
-        assertEquals(SEED_SESSIONS.size, dao.sessions.size)
+        DataMigrator(dao, IdentityCrypto()).migrate(prefs)
 
-        // 用户清空全部会话
-        dao.clearMessages()
-        dao.clearSessions()
-        assertEquals(0, dao.sessions.size)
+        assertTrue(dao.sessions.isEmpty())
+    }
 
-        // 重启:迁移守卫生效,不重新灌入
-        m.migrate(prefs)
-        assertEquals(0, dao.sessions.size)
+    @Test
+    fun `升级安装清掉历史演示会话但保留真实会话`() = runTest {
+        val prefs = FakePrefs()
+        val dao = MemDao()
+        // 旧版首启灌入的演示会话 + 用户自己的一条真实会话
+        DataMigrator.LEGACY_DEMO_SESSION_IDS.forEach { id ->
+            dao.sessions[id] = SessionEntity(id, "演示", "刚刚", "", 0L)
+        }
+        dao.sessions["s7f3k2"] = SessionEntity("s7f3k2", "真实会话", "刚刚", "", 1L)
+
+        DataMigrator(dao, IdentityCrypto()).migrate(prefs)
+
+        assertEquals(listOf("s7f3k2"), dao.sessions.keys.toList())
+
+        // 只清一次:用户之后手动删除同 id 会话不会被再触发(标志已置位)
+        assertTrue(prefs.getBoolean(DataMigrator.KEY_DEMO_PURGED, false))
+        dao.sessions["s1"] = SessionEntity("s1", "用户自建", "刚刚", "", 2L)
+        DataMigrator(dao, IdentityCrypto()).migrate(prefs)
+        assertEquals(2, dao.sessions.size)
     }
 
     @Test
@@ -112,7 +122,7 @@ class DataMigratorTest {
     /* ---------------- 首启行为 ---------------- */
 
     @Test
-    fun `首启平移设置键并灌入演示会话`() = runTest {
+    fun `首启平移设置键`() = runTest {
         val prefs = FakePrefs()
         prefs.putString("themeMode", "light")
         prefs.putString("modelId", "glm-5.3-flash")
@@ -127,11 +137,7 @@ class DataMigratorTest {
         assertEquals("glm-5.3-flash", dao.setting("modelId")?.value)
         assertEquals("loose", dao.setting("repoParse")?.value)
         assertEquals("true", dao.setting("signedIn")?.value)
-        assertEquals(SEED_SESSIONS.size, dao.sessions.size)
-        assertEquals(
-            SEED_SESSIONS.first().messages.size,
-            dao.messages.values.first { it.isNotEmpty() }.size,
-        )
+        assertTrue(dao.sessions.isEmpty())
     }
 
     @Test
@@ -226,7 +232,7 @@ class DataMigratorTest {
 
         assertNull(report)
         assertEquals(0, dao.customModels.size)
-        assertEquals(SEED_SESSIONS.size, dao.sessions.size) // 其余迁移照常完成
+        assertTrue(dao.sessions.isEmpty()) // 其余迁移照常完成
     }
 
     /* ---------------- 恒等加解密 ---------------- */

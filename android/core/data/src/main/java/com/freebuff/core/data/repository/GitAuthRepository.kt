@@ -5,7 +5,6 @@ import com.freebuff.core.data.network.ApiResult
 import com.freebuff.core.data.network.DevicePoll
 import com.freebuff.core.data.network.GithubApi
 import com.freebuff.core.data.security.CryptoManager
-import com.freebuff.core.model.GIT_REPOS
 import com.freebuff.core.model.GitState
 import com.freebuff.core.model.RepoItem
 import kotlinx.coroutines.delay
@@ -28,13 +27,11 @@ sealed interface GitConnectStep {
 }
 
 /**
- * Git 账号接入抽象。
- * - 真实实现:GitHub OAuth 设备流(配置了 client_id)
- * - 演示实现:未配置 client_id 时回退,直接返回演示账号与仓库
+ * Git 账号接入抽象:GitHub OAuth 设备流。
+ * 未配置 client_id 时 [connect] 直接以 [GitConnectStep.Failed] 报「未配置」,
+ * 不做任何账号/仓库的假数据回退。
  */
 interface GitAuthRepository {
-    val isDemo: Boolean
-
     /** 发起授权并以流上报阶段;取消收集即中止轮询。 */
     fun connect(): Flow<GitConnectStep>
 
@@ -45,32 +42,7 @@ interface GitAuthRepository {
 }
 
 /**
- * 演示回退实现:未配置 GITHUB_OAUTH_CLIENT_ID 时由 DI 选中。
- * 保持与真实实现完全相同的阶段协议,便于 UI 与测试复用。
- */
-@Singleton
-class DemoGitAuthRepository @Inject constructor(
-    @Named("githubClientId") private val clientId: String,
-    private val settings: SettingsRepository,
-) : GitAuthRepository {
-
-    override val isDemo: Boolean get() = clientId.isBlank()
-
-    override fun connect(): Flow<GitConnectStep> = flow {
-        val g = GitState(true, "GitHub", "octocat", "Octocat 演示账号")
-        settings.setGit(g)
-        emit(GitConnectStep.Done(g))
-    }
-
-    override suspend fun revoke() {
-        settings.revokeGit()
-    }
-
-    override suspend fun repos(): ApiResult<List<RepoItem>> = ApiResult.Ok(GIT_REPOS)
-}
-
-/**
- * 真实实现:GitHub OAuth 设备流。
+ * 实现:GitHub OAuth 设备流。
  *
  * 1. POST /login/device/code 取 device_code + user_code
  * 2. 上报 [GitConnectStep.AwaitingUser],按 interval 轮询 /login/oauth/access_token
@@ -83,8 +55,6 @@ class RealGitAuthRepository @Inject constructor(
     private val settings: SettingsRepository,
     private val crypto: CryptoManager,
 ) : GitAuthRepository {
-
-    override val isDemo: Boolean get() = false
 
     override fun connect(): Flow<GitConnectStep> = flow {
         if (clientId.isBlank()) {

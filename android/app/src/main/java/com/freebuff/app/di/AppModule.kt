@@ -13,7 +13,7 @@ import javax.inject.Singleton
 /**
  * app 模块装配:
  * - [AppNavigator] 单例绑定(route/sheet/snackbar 全局状态)
- * - 三个可配置密钥只读自 BuildConfig,feature/core 层经 @Named 注入,
+ * - 三个可配置密钥与已安装版本号只读自 BuildConfig,feature/core 层经 @Named 注入,
  *   不直接引用 app 的 BuildConfig。
  */
 @Module
@@ -36,5 +36,10 @@ abstract class AppModule {
         @Provides
         @Named("updateUrl")
         fun provideUpdateUrl(): String = com.freebuff.mobile.BuildConfig.UPDATE_URL
+
+        /** 已安装版本号(源自 android/version.properties):设置页与关于页的版本显示以此为准。 */
+        @Provides
+        @Named("appVersion")
+        fun provideAppVersion(): String = com.freebuff.mobile.BuildConfig.VERSION_NAME
     }
 }

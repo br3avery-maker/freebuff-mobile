@@ -4,7 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.freebuff.core.data.network.ApiResult
 import com.freebuff.core.data.network.ProbeResult
-import com.freebuff.core.data.repository.CatalogSource
 import com.freebuff.core.data.repository.CustomModelRepository
 import com.freebuff.core.data.repository.GitAuthRepository
 import com.freebuff.core.data.repository.GitConnectStep
@@ -14,6 +13,7 @@ import com.freebuff.core.data.repository.SettingsRepository
 import com.freebuff.core.data.repository.UpdateRepository
 import com.freebuff.core.model.CustomModel
 import com.freebuff.core.model.GitState
+import com.freebuff.core.model.Reasoning
 import com.freebuff.core.model.RemoteVersion
 import com.freebuff.core.model.RepairReport
 import com.freebuff.core.model.ToolPermission
@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import javax.inject.Named
 
 /** 设置页:主题 / Git 集成 / 自定义模型 / 版本更新。 */
 @HiltViewModel
@@ -44,6 +45,8 @@ class SettingsViewModel @Inject constructor(
     private val gitAuth: GitAuthRepository,
     private val updateRepo: UpdateRepository,
     private val navigator: AppNavigator,
+    /** 已安装版本号(BuildConfig.VERSION_NAME)。版本显示以实际安装的包为准,不落库、不可被覆盖。 */
+    @Named("appVersion") val appVersion: String,
 ) : ViewModel() {
 
     val themeMode: StateFlow<String> = settings.themeMode
@@ -69,6 +72,10 @@ class SettingsViewModel @Inject constructor(
     val memoryEnabled: StateFlow<Boolean> = settings.memoryEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
+    /** 深度思考(思维链)模式:off 不思考 / auto 按模型识别 / on 强制开启。 */
+    val reasoningMode: StateFlow<String> = settings.reasoningMode
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), Reasoning.MODE_AUTO)
+
     /** 工具权限覆写(用户改过的工具;生效分级 = 覆写 ∪ 默认)。 */
     val toolPermissionOverrides: StateFlow<Map<String, ToolPermission>> = settings.toolPermissionOverrides
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
@@ -82,8 +89,19 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { settings.setMemoryEnabled(v) }
     }
 
-    val version: StateFlow<String> = settings.version
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "0.1.0")
+    /** 切换深度思考模式(立即生效,下一轮请求即携带对应参数)。 */
+    fun setReasoningMode(mode: String) {
+        viewModelScope.launch {
+            settings.setReasoningMode(mode)
+            navigator.showSnack(
+                when (mode) {
+                    Reasoning.MODE_OFF -> "深度思考:已关闭"
+                    Reasoning.MODE_ON -> "深度思考:开启(未识别的模型也会试 enable_thinking)"
+                    else -> "深度思考:自动按模型识别"
+                },
+            )
+        }
+    }
 
     /* ---------------- 模型 ---------------- */
 
@@ -135,7 +153,7 @@ class SettingsViewModel @Inject constructor(
 
     /* ---------------- 官方模型目录 ---------------- */
 
-    val catalogSource: StateFlow<CatalogSource> = catalog.source
+    val catalogLoaded: StateFlow<Boolean> = catalog.loaded
     val catalogConfigured: Boolean get() = catalog.isGatewayConfigured
 
     private val _catalogError = MutableStateFlow<String?>(null)
@@ -195,30 +213,36 @@ class SettingsViewModel @Inject constructor(
 
     /* ---------------- Git 集成 ---------------- */
 
-    val isGitDemo: Boolean get() = gitAuth.isDemo
-
     /** 当前授权阶段:null 表示未在授权中。 */
     private val _gitConnect = MutableStateFlow<GitConnectStep?>(null)
     val gitConnect: StateFlow<GitConnectStep?> = _gitConnect.asStateFlow()
 
+    /**
+     * 授权失败原因(未配置 client_id / 网络失败 / 授权被拒)。
+     * 在弹层里就地展示:一闪而过的 toast 会与弹层面板重叠,用户容易以为按钮没响应。
+     */
+    private val _gitError = MutableStateFlow<String?>(null)
+    val gitError: StateFlow<String?> = _gitError.asStateFlow()
+
     private var gitConnectJob: Job? = null
 
     /**
-     * 发起 Git 授权。真实实现走 GitHub 设备流:先上报待授权阶段(用户码 + 验证地址),
-     * 轮询到 token 后写入账号状态;演示实现立即完成。
+     * 发起 Git 授权:GitHub 设备流,先上报待授权阶段(用户码 + 验证地址),
+     * 轮询到 token 后写入账号状态;未配置 client_id 时以失败阶段结束并提示原因。
      */
     fun connectGit() {
         gitConnectJob?.cancel()
         _gitConnect.value = null
+        _gitError.value = null
         gitConnectJob = viewModelScope.launch {
             gitAuth.connect().collect { step ->
                 _gitConnect.value = step
                 when (step) {
                     is GitConnectStep.Done ->
-                        navigator.showSnack(if (gitAuth.isDemo) "已关联 " + step.state.name + "(演示)" else "已关联 " + step.state.name)
+                        navigator.showSnack("已关联 " + step.state.name)
                     is GitConnectStep.Failed -> {
-                        navigator.showSnack(step.message)
                         _gitConnect.value = null
+                        _gitError.value = step.message
                     }
                     is GitConnectStep.AwaitingUser -> Unit
                 }
@@ -235,6 +259,7 @@ class SettingsViewModel @Inject constructor(
 
     fun revokeGit() {
         cancelGitConnect()
+        _gitError.value = null
         viewModelScope.launch {
             gitAuth.revoke()
             navigator.showSnack("已断开 Git 账号")
@@ -290,17 +315,17 @@ class SettingsViewModel @Inject constructor(
 
     val updateConfigured: Boolean get() = updateRepo.isConfigured
 
-    /** 同意更新:把本地版本号提升到远程版本(真实安装流程为后续接入点)。 */
-    fun applyUpdate(newVersion: String) = viewModelScope.launch { settings.setVersion(newVersion) }
+    /** 当前更新源主机名(失败提示里指明实际请求的地址)。 */
+    val updateSource: String get() = updateRepo.sourceLabel
 
     /**
-     * 检查更新。
+     * 检查更新(真实拉取更新源)。
      * @param onResult (远程版本, 是否有更新, 失败文案;失败时前两项为 null/false)
      */
     fun checkForUpdate(onResult: (RemoteVersion?, Boolean, String?) -> Unit) {
         viewModelScope.launch {
             when (val r = updateRepo.check()) {
-                is ApiResult.Ok -> onResult(r.data, r.data.isNewerThan(version.value), null)
+                is ApiResult.Ok -> onResult(r.data, r.data.isNewerThan(appVersion), null)
                 is ApiResult.Err -> onResult(null, false, r.error.userMessage)
             }
         }

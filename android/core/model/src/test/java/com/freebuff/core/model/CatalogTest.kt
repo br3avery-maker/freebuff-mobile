@@ -4,15 +4,21 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** 官方网关目录整理:已知 id 复用内置元数据,未知 id 自动生成展示信息。 */
+/** 官方网关目录整理:每个网关 id 都现场生成展示信息(不再有内置元数据表)。 */
 class CatalogTest {
 
     @Test
-    fun `已知 id 复用内置元数据`() {
+    fun `已知 id 的展示信息由 id 生成`() {
         val models = officialModelsFromIds(listOf("deepseek-v4-flash"))
         assertEquals(1, models.size)
-        assertEquals(OFFICIAL_MODELS.first { it.id == "deepseek-v4-flash" }.name, models[0].name)
-        assertEquals(OFFICIAL_MODELS.first { it.id == "deepseek-v4-flash" }.badge, models[0].badge)
+        assertEquals("Deepseek V4 Flash", models[0].name)
+        assertEquals("DEE", models[0].badge)
+        assertEquals("来自官方网关的实时目录", models[0].desc)
+    }
+
+    @Test
+    fun `未配置网关时目录为空`() {
+        assertTrue(officialModelsFromIds(emptyList()).isEmpty())
     }
 
     @Test
@@ -30,12 +36,6 @@ class CatalogTest {
         val ids = listOf("b-model", "", "a-model", "b-model", "  ")
         val models = officialModelsFromIds(ids)
         assertEquals(listOf("b-model", "a-model"), models.map { it.id })
-    }
-
-    @Test
-    fun `内置目录作为回退且非空`() {
-        assertTrue(builtinOfficialModels.isNotEmpty())
-        assertEquals(OFFICIAL_MODELS, builtinOfficialModels)
     }
 
     @Test

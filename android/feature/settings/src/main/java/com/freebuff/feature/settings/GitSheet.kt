@@ -35,18 +35,16 @@ import com.freebuff.core.ui.openExternal
 import com.freebuff.core.ui.navigation.LocalAppNavigator
 import com.freebuff.core.ui.theme.LocalTokens
 
-private data class Provider(val key: String, val name: String, val host: String, val real: Boolean)
+private data class Provider(val key: String, val name: String, val host: String)
 
+/** 正式版只支持已接通的服务商;未接通的不在 UI 里出现,避免点了没反应。 */
 private val PROVIDERS = listOf(
-    Provider("github", "GitHub", "github.com", true),
-    Provider("gitlab", "GitLab", "gitlab.com", false),
-    Provider("gitee", "Gitee", "gitee.com", false),
+    Provider("github", "GitHub", "github.com"),
 )
 
 /**
  * Git 账号:关联 / 断开。
- * - 配置了 client_id:走真实 GitHub 设备流,展示用户码并轮询直到授权完成
- * - 未配置:演示账号,点击即完成
+ * 走真实 GitHub 设备流:展示用户码并轮询直到授权完成。
  */
 @Composable
 fun GitSheet(viewModel: SettingsViewModel = hiltViewModel()) {
@@ -56,6 +54,7 @@ fun GitSheet(viewModel: SettingsViewModel = hiltViewModel()) {
     val clipboard = LocalClipboardManager.current
     val g by viewModel.git.collectAsState()
     val step by viewModel.gitConnect.collectAsState()
+    val error by viewModel.gitError.collectAsState()
 
     // 拿到用户码后自动拉起浏览器授权页(仅一次)
     val awaiting = step as? GitConnectStep.AwaitingUser
@@ -84,7 +83,7 @@ fun GitSheet(viewModel: SettingsViewModel = hiltViewModel()) {
             )
 
             else -> ProviderList(
-                demo = viewModel.isGitDemo,
+                error = error,
                 onPick = { viewModel.connectGit() },
             )
         }
@@ -151,12 +150,17 @@ private fun AwaitingCard(
 
 @Composable
 private fun ProviderList(
-    demo: Boolean,
+    error: String?,
     onPick: (Provider) -> Unit,
 ) {
     val t = LocalTokens.current
-    val shown = if (demo) PROVIDERS else PROVIDERS.filter { it.real }
-    shown.forEach { p ->
+    // 失败原因就地展示(如「GitHub OAuth client_id 未配置」):
+    // 未配置时点一下就能看到为什么没反应,而不是毫无反馈
+    error?.let {
+        Text(it, color = t.danger, fontSize = 11.5.sp, lineHeight = 17.sp,
+            modifier = Modifier.padding(bottom = 10.dp))
+    }
+    PROVIDERS.forEach { p ->
         val dot = when (p.key) {
             "github" -> t.accent
             "gitlab" -> t.tier
@@ -173,11 +177,6 @@ private fun ProviderList(
         }
         Spacer(Modifier.height(10.dp))
     }
-    if (demo) {
-        Text("演示环境:未配置 GITHUB_OAUTH_CLIENT_ID,点击即完成模拟 OAuth 授权",
-            color = t.text3, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp, start = 4.dp))
-    } else {
-        Text("将通过 GitHub 设备流授权(浏览器输入用户码),只读取账号与仓库列表",
-            color = t.text3, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp, start = 4.dp))
-    }
+    Text("将通过 GitHub 设备流授权(浏览器输入用户码),只读取账号与仓库列表",
+        color = t.text3, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp, start = 4.dp))
 }

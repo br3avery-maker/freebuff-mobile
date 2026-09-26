@@ -248,10 +248,22 @@ private fun GitRepos(vm: TaskWizardViewModel, d: TaskDraft) {
 @Composable
 private fun ModelStep(vm: TaskWizardViewModel, d: TaskDraft, all: List<com.freebuff.core.model.OfficialModel>) {
     val t = LocalTokens.current
-    Text("官方模型", color = t.text3, fontSize = 11.5.sp, fontWeight = FontWeight.Medium,
-        modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp))
-    all.filter { it.tier != "custom" }.forEach { m ->
-        WizardModelRow(m, d.modelId == m.id, t.accent) { vm.update { d.copy(modelId = m.id) } }
+    // 正式构建可能一个模型都没有(未配网关、也没加自定义模型):
+    // 给出可执行的下一步,而不是一个空空的「官方模型」标题
+    if (all.isEmpty()) {
+        Text("还没有可用模型", color = t.warn, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        Text("官方模型需在构建时配置网关地址;自定义模型可在 设置 → 自定义模型 里添加一个 OpenAI 兼容端点。",
+            color = t.text3, fontSize = 11.5.sp, lineHeight = 17.sp,
+            modifier = Modifier.padding(top = 6.dp))
+        return
+    }
+    val official = all.filter { it.tier != "custom" }
+    if (official.isNotEmpty()) {
+        Text("官方模型", color = t.text3, fontSize = 11.5.sp, fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp))
+        official.forEach { m ->
+            WizardModelRow(m, d.modelId == m.id, t.accent) { vm.update { d.copy(modelId = m.id) } }
+        }
     }
     if (all.any { it.tier == "custom" }) {
         Text("我的模型", color = t.text3, fontSize = 11.5.sp, fontWeight = FontWeight.Medium,
@@ -310,7 +322,8 @@ private fun DescStep(vm: TaskWizardViewModel, d: TaskDraft, modelList: List<com.
     Spacer(Modifier.height(10.dp))
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text("模型: ", color = t.text3, fontSize = 12.sp)
-        Text(modelList.firstOrNull { it.id == d.modelId }?.name ?: d.modelId, color = t.text2, fontSize = 12.sp,
+        val picked = modelList.firstOrNull { it.id == d.modelId }?.name ?: d.modelId
+        Text(picked.ifBlank { "未选择" }, color = if (picked.isBlank()) t.warn else t.text2, fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold)
         if (d.repoName.isNotBlank() || d.repoUrl.isNotBlank()) {
             Spacer(Modifier.width(10.dp))
@@ -338,8 +351,12 @@ private fun WizardFooter(
         }
         Spacer(Modifier.weight(1f))
         val last = d.step == 2
-        Text(if (last) "发起任务" else "下一步", color = t.accentInk, fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
-            modifier = Modifier.clip(RFull).background(if (last && d.desc.isBlank()) t.surface3 else t.accent)
+        // 待补描述时是「禁用态」:底色换成 surface3,文字也必须跟着换成 text2 ——
+        // accentInk(浅色主题是白、深色主题是近黑)压在 surface3 上只有 1.2:1,按钮会像没字
+        val ready = !last || d.desc.isNotBlank()
+        Text(if (last) "发起任务" else "下一步",
+            color = if (ready) t.accentInk else t.text2, fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
+            modifier = Modifier.clip(RFull).background(if (ready) t.accent else t.surface3)
                 .clickable {
                     if (last) {
                         vm.launch(onLaunch)

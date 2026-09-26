@@ -2,6 +2,8 @@ package com.freebuff.core.data.tools
 
 import com.freebuff.core.data.network.ApiError
 import com.freebuff.core.data.network.FreebuffApi
+import com.freebuff.core.model.AgentLoop
+import com.freebuff.core.model.JsonArgs
 import com.freebuff.core.model.ToolCallReq
 import com.freebuff.core.model.ToolOutcome
 import kotlinx.coroutines.CoroutineDispatcher
@@ -27,17 +29,35 @@ class ToolExecutors @Inject constructor(
 ) {
     private val io: CoroutineDispatcher = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
 
-    /** 单次执行入口。未知工具 → 错误结果;执行异常 → 错误结果(绝不抛向调用方)。 */
+    /**
+     * 单次执行入口。未知工具 → 错误结果;执行异常 → 错误结果(绝不抛向调用方)。
+     *
+     * 参数先过一层宽容解析([JsonArgs],整个链路只做这一次):
+     * - 空参数(Anthropic 经兼容层对无参工具发 `""`)归一为 `{}`,否则 `JSONObject("")` 抛异常、
+     *   无参工具永远执行不了(vercel/ai#6687);
+     * - 栅栏/尾逗号/单引号等手写瑕疵自动修复;
+     * - 实在修不好:回一条「参数不是合法 JSON」给模型(可自愈重试),而不是报个看不懂的异常。
+     */
     suspend fun execute(call: ToolCallReq): ToolOutcome = withContext(io) {
+        val args = when (val r = JsonArgs.parse(call.argsJson)) {
+            is JsonArgs.Result.Ok -> r.obj.toString()
+            is JsonArgs.Result.Invalid ->
+                return@withContext ToolOutcome(
+                    "参数不是合法 JSON(工具 " + call.name + "):" + r.reason +
+                        "。收到的是:" + r.raw.take(200) + "。请修正后重试。",
+                    isError = true,
+                )
+        }
         try {
             when (call.name) {
-                "web_search" -> webSearch(call.argsJson)
-                "web_fetch" -> webFetch(call.argsJson)
-                "github_search_repositories" -> ghSearchRepos(call.argsJson)
-                "github_get_file" -> ghGetFile(call.argsJson)
-                "github_get_readme" -> ghGetReadme(call.argsJson)
-                "calculator" -> calculator(call.argsJson)
+                "web_search" -> webSearch(args)
+                "web_fetch" -> webFetch(args)
+                "github_search_repositories" -> ghSearchRepos(args)
+                "github_get_file" -> ghGetFile(args)
+                "github_get_readme" -> ghGetReadme(args)
+                "calculator" -> calculator(args)
                 "current_time" -> ToolOutcome(currentTime())
+                AgentLoop.COMPLETION_TOOL -> completion(args)
                 else -> ToolOutcome("未知工具:" + call.name + "。可用工具见系统提示。", isError = true)
             }
         } catch (e: ApiError) {
@@ -45,6 +65,19 @@ class ToolExecutors @Inject constructor(
         } catch (e: Exception) {
             ToolOutcome("工具执行失败:" + (e.message ?: e::class.java.simpleName), isError = true)
         }
+    }
+
+    /**
+     * 任务完成声明:模型用它在目标达成后结束本轮循环(Cline 的 attempt_completion 同构)。
+     * 这里不调外部能力,只把 summary 作为执行结果回填,让卡片与协议消息都有据可查。
+     */
+    private fun completion(argsJson: String): ToolOutcome {
+        val summary = try {
+            JSONObject(argsJson.ifBlank { "{}" }).optString("summary")
+        } catch (e: Exception) {
+            ""
+        }
+        return ToolOutcome(if (summary.isBlank()) "任务已标记完成。" else "任务已标记完成:" + summary.take(500))
     }
 
     /* ---------------- 联网搜索(免钥:DuckDuckGo Instant Answer API) ---------------- */

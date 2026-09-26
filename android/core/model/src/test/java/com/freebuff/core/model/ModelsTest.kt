@@ -9,10 +9,9 @@ import org.junit.Test
 class ModelsTest {
 
     @Test
-    fun `官方模型目录非空且字段齐全`() {
-        assertTrue(OFFICIAL_MODELS.isNotEmpty())
-        assertEquals("full", OFFICIAL_MODELS.first().tier)
-        assertEquals("deepseek-v4-flash", OFFICIAL_MODELS.first().id)
+    fun `没有网关目录时列表为空`() {
+        // 正式版不再内置官方目录:未配置网关就必须是空列表(而不是退回演示数据)
+        assertTrue(mergedModelList(emptyList(), emptyList()).isEmpty())
     }
 
     @Test
@@ -29,19 +28,21 @@ class ModelsTest {
     }
 
     @Test
-    fun `合并列表官方在前自定义在后`() {
+    fun `合并列表网关模型在前自定义在后`() {
+        val gateway = listOf(OfficialModel("gateway-a", "Gateway A", "GAT", "full", "完整访问", "来自官方网关"))
         val customs = listOf(CustomModel(id = "cm1", name = "A"))
-        val merged = mergedModelList(customs)
-        assertEquals(OFFICIAL_MODELS.size + 1, merged.size)
-        assertEquals(OFFICIAL_MODELS.first().id, merged.first().id)
+        val merged = mergedModelList(gateway, customs)
+        assertEquals(2, merged.size)
+        assertEquals("gateway-a", merged.first().id)
         assertEquals("cm1", merged.last().id)
         assertEquals("custom", merged.last().tier)
     }
 
     @Test
-    fun `空自定义列表只含官方`() {
-        val merged = mergedModelList(emptyList())
-        assertEquals(OFFICIAL_MODELS.size, merged.size)
+    fun `未配置网关时只列自定义模型`() {
+        val merged = mergedModelList(emptyList(), listOf(CustomModel(id = "cm1", name = "A")))
+        assertEquals(1, merged.size)
+        assertEquals("cm1", merged.single().id)
     }
 
     // ---------- RemoteVersion.isNewerThan ----------

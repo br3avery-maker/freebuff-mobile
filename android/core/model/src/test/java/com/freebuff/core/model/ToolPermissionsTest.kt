@@ -16,6 +16,15 @@ class ToolPermissionsTest {
     }
 
     @Test
+    fun `循环控制工具免确认`() {
+        // task_completed / spawn_subagent 不是真实副作用:前者是循环收工信号,后者暂无本地执行。
+        // 若回退到 CONFIRM,循环每收工一次就弹窗,用户不点就卡住(真机实测过的缺陷)。
+        assertEquals(ToolPermission.ALLOW, ToolPermissions.effective(AgentLoop.COMPLETION_TOOL, emptyMap()))
+        assertEquals(ToolPermission.ALLOW, ToolPermissions.effective(Subagent.TOOL_NAME, emptyMap()))
+        assertTrue(AgentLoop.COMPLETION_TOOL in DefaultTools.ALL.map { it.name })
+    }
+
+    @Test
     fun `未知工具回退 CONFIRM`() {
         assertEquals(ToolPermission.CONFIRM, ToolPermissions.effective("mystery_tool", emptyMap()))
         // 未知工具 + 任意覆写仍是覆写值(用户显式设过就尊重)

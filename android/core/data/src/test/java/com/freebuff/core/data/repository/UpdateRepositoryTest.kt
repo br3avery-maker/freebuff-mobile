@@ -25,7 +25,9 @@ class UpdateRepositoryTest {
     @After
     fun tearDown() {
         server.shutdown()
-    }    private fun repo(url: String) = UpdateRepository(url, OkHttpClient())
+    }
+
+    private fun repo(url: String) = UpdateRepository(url, OkHttpClient())
 
 
     @Test
@@ -71,6 +73,25 @@ class UpdateRepositoryTest {
     fun `缺少 version 字段时归类 Parse`() = runTest {
         server.enqueue(MockResponse().setBody("""{"notes":["a"]}"""))
         assertTrue((repo(server.url("/u").toString()).check() as ApiResult.Err).error is ApiError.Parse)
+    }
+
+    @Test
+    fun `解析下载地址 url 字段`() = runTest {
+        server.enqueue(
+            MockResponse().setBody("""{"version":"0.3.0","url":"https://example.com/releases/latest"}"""),
+        )
+        val v = (repo(server.url("/u").toString()).check() as ApiResult.Ok).data
+        assertEquals("https://example.com/releases/latest", v.url)
+    }
+
+    @Test
+    fun `sourceLabel 取主机名,未配置为空,无法解析时回退原文`() {
+        assertEquals(
+            "raw.example.com",
+            UpdateRepository("https://raw.example.com/main/dist/update.json", OkHttpClient()).sourceLabel,
+        )
+        assertEquals("", UpdateRepository("", OkHttpClient()).sourceLabel)
+        assertEquals("not a url", UpdateRepository("not a url", OkHttpClient()).sourceLabel)
     }
 
     @Test

@@ -83,8 +83,40 @@ sealed interface ApiResult<out T> {
 
 ### 3.3 对话(ChatRepository)
 
-`POST {endpoint}`(`stream=true`,OpenAI 兼容),按 SSE 解析 `choices[0].delta.content`,兼容 `text` / `message.content`。
+`POST {endpoint}`(`stream=true`,OpenAI 兼容),按 SSE **帧**解码(`SseDecoder`)后交给 `AgentEventParser`。
 非 2xx 抛出 `ApiError.Http(code, snippet)`;ChatViewModel 将分类文案写回该条消息(不再显示原始异常)。
+
+#### 3.3.1 流解析适配(对着开源生态踩过的坑逐条补)
+
+| 现象 | 处理 | 依据 |
+|---|---|---|
+| 一个事件的 JSON 被拆到多条 `data:` 行 | `SseDecoder` 按 SSE 规范累积到空行才产出 | openai-python SSEDecoder「不到空行不产出事件」 |
+| 末尾事件没有空行收尾 | 流结束 `flush()` 一次 | pi#9047(漏 flush 会丢收尾事件) |
+| `:` 心跳、`event:`/`id:`/`retry:` 字段 | 忽略;`data:` 后只去掉一个空格 | SSE 规范 |
+| NDJSON(无 `data:` 前缀的裸 JSON 行) | 整行当载荷 | Ollama 原生等端点 |
+| `delta.tool_calls` **没有 index**(Gemini 兼容层) | 有 index 用 index,没有按 `id` 分槽,都没有归到最后一次调用 | hermes-agent#62937(按下标归并会把并行调用合成一个) |
+| 无参工具的 `arguments` 是空串 | 归一为 `{}`,仍能执行 | vercel/ai#6687(否则该调用被当未完成、工具永不执行) |
+| `arguments` 是对象/数组而非字符串 | 序列化后照常解析 | 个别网关行为 |
+| 名称/参数分片里**整段重发** | 相同跳过、以前缀开头则整体替换(避免 `web_searchweb_search`) | crush#3153 |
+| 参数带栅栏/尾逗号/单引号/前后夹带文字 | `JsonArgs.repair` 逐级修复;修不好回「参数不是合法 JSON…请重试」给模型(可自愈) | 模型手写 JSON 的常见瑕疵 |
+| HTTP 200 里夹 `{"error": …}` 帧 | 转 `AgentEvent.Failure` 展示 ⚠ | 否则「流在跑但什么都不吐」直到空闲看门狗 |
+| 遗留 `delta.function_call`(单数) | 支持;`finish_reason=function_call` 同 `tool_calls` 收尾 | 旧协议仍被不少网关实现 |
+| `content` / `reasoning_*` 是数组部件 | 按 `{type,text}` 拼接后再取文本 | Anthropic 兼容网关 |
+
+#### 3.3.2 请求侧适配
+
+- **空 content 不发**:只有工具调用、没有正文的 assistant 消息不写 `content` 字段(严格实现会因 `content:""` 400)。
+- **thinking 与工具的冲突**(Anthropic 兼容端点):回传带 `tool_calls` 的 assistant 消息时必须同时回传 `thinking_blocks`,
+  而 Chat Completions 协议里没有这个字段 —— 历史里已有带工具调用的 assistant 消息时,本轮**丢弃 `thinking` 参数**
+  (与 LiteLLM `modify_params` 同款处理;仅 [ReasoningFlavor.THINKING_BUDGET] 这类端点)。
+- **降级重发一次**(`RequestFallbacks`):端点明确拒绝工具定义/思考参数时,去掉该字段重发一次并提示用户
+  (「该端点不接受工具定义,已按纯对话继续」),本会话后续轮次不再带 tools;只认「错误文本指向该字段」,其余 400 照常报错。
+- 思考参数只送模型所属族认得的字段(见 `Reasoning`),对不认识的模型一个字段都不加。
+
+#### 3.3.3 验证
+
+`verify/mock_variants.py` 是按「最后一条 user 消息里的 `case xxx`」切场景的变体 mock,覆盖上表每一项并在
+服务端打印 `PASS/FAIL`;设备端用 `verify/send_case.py <case>` 发一条消息后 grep 日志即可回归。
 
 ### 3.4 自定义模型(CustomModelRepository)
 
@@ -94,8 +126,15 @@ sealed interface ApiResult<out T> {
 
 ### 3.5 版本检查(UpdateRepository)
 
-`GET {updateUrl}` → `{version, notes[]}`;未配置 → `NotConfigured`;非 2xx → `Http`;非 JSON / 缺 `version` → `Parse`。
-`UpdateSheet` 分「检查中 / 有更新 / 已是最新 / 失败(可重试)」四态。
+`GET {updateUrl}` → `{version, notes[], url}`;未配置 → `NotConfigured`;非 2xx → `Http`(带 `HttpTarget.UpdateSource`,
+404 文案指向更新源而非模型端点);非 JSON / 缺 `version` → `Parse`。
+
+默认更新源是本仓库公开的 `dist/update.json`(raw.githubusercontent.com 直链,匿名可读),发版时由
+`.github/workflows/release.yml` 用 `scripts/update-manifest.py` 重建并回推 `main`,随后从 GitHub API + raw
+两条路径自证线上版本已对齐;CI(`android.yml`)用同一脚本校验清单版本不高于产品版本。
+
+`UpdateSheet` 分「检查中 / 有更新(列出说明 + 前往下载)/ 已是最新 / 失败(可重试)」四态;
+版本显示与实际比较都用 `BuildConfig.VERSION_NAME`(源于 `android/version.properties`),App 不自行安装 APK。
 
 ## 4. 配置项
 
@@ -105,7 +144,7 @@ sealed interface ApiResult<out T> {
 |---|---|---|
 | `DEFAULT_GATEWAY_BASE_URL` | 官方网关根地址(如 `https://api.example.com/v1`) | 官方目录用内置列表;官方模型对话提示未配置 |
 | `GITHUB_OAUTH_CLIENT_ID` | GitHub OAuth App 的 client_id | Git 账号回退演示实现 |
-| `UPDATE_URL` | 版本检查 JSON 地址 | 版本检查提示未配置 |
+| `UPDATE_URL` | 版本检查 JSON 地址(默认指向本仓库公开的 `dist/update.json`) | 仅当显式改成空串时提示未配置 |
 
 ## 5. 失败与回退策略
 
@@ -113,10 +152,11 @@ sealed interface ApiResult<out T> {
 |---|---|
 | 官方目录拉取失败 | 保留内置目录 + 面板提示失败原因,可重试 |
 | 网关未配置 | 不请求、不报错,目录固定内置 |
-| Git 未配置 client_id | 演示实现(阶段协议一致) |
+| Git 未配置 client_id | 授权直接以失败阶段结束,弹层内就地提示未配置 |
 | Git token 失效(401) | 分类文案「鉴权失败(401)」,提示重新关联 |
 | 自定义模型快照刷新失败 | 连接仍视为成功,提示快照未更新并保留旧快照 |
 | 更新源未配置 | 明确提示未配置,而非「已是最新」 |
+| 更新源不可达 / 404 | 分类文案 + 实际请求的主机名,可重试;不会报成「已是最新」 |
 
 ## 6. 测试覆盖(`core:data` JVM 单测,MockWebServer)
 

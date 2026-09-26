@@ -10,7 +10,6 @@ import com.freebuff.core.data.network.ApiError
 import com.freebuff.core.data.network.ChatMessage
 import com.freebuff.core.data.network.RetryPolicy
 import com.freebuff.core.data.network.toApiError
-import com.freebuff.core.data.repository.CatalogSource
 import com.freebuff.core.data.repository.ChatRepository
 import com.freebuff.core.data.repository.CustomModelRepository
 import com.freebuff.core.data.repository.MemoryEntryRepository
@@ -102,12 +101,12 @@ class ChatViewModel @Inject constructor(
     // Eagerly 常驻订阅:向导提交后立刻 sendMessage 时这两个值必须已就绪,
     // WhileSubscribed 会在首页(聊天页未组合)期间停留在初始值,导致自定义模型被误判为官方模型
     val modelId: StateFlow<String> = settings.modelId
-        .stateIn(viewModelScope, SharingStarted.Eagerly, "deepseek-v4-flash")
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "")
 
     val customModels: StateFlow<List<CustomModel>> = customModelRepo.models
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    /** 模型目录:官方(网关实时/内置回退)+ 自定义。 */
+    /** 模型目录:官方(网关实时)+ 自定义。 */
     val modelList: StateFlow<List<OfficialModel>> = combine(catalog.official, customModels) { official, customs ->
         mergedModelList(official, customs)
     }.stateIn(
@@ -116,8 +115,11 @@ class ChatViewModel @Inject constructor(
         mergedModelList(catalog.official.value, customModels.value),
     )
 
-    /** 官方目录来源:用于面板提示是实时目录还是内置回退。 */
-    val catalogSource: StateFlow<CatalogSource> = catalog.source
+    /** 官方网关是否已配置(未配置时官方模型列表为空,模型面板明确提示)。 */
+    val gatewayConfigured: Boolean get() = catalog.isGatewayConfigured
+
+    /** 是否已成功拉到过网关目录(用于面板区分「未配置」与「尚未拉取」)。 */
+    val catalogLoaded: StateFlow<Boolean> = catalog.loaded
 
     /** 最近一次目录拉取失败原因(网关未配置时为 null)。 */
     val catalogError: StateFlow<ApiError?> = catalog.lastError
@@ -150,11 +152,11 @@ class ChatViewModel @Inject constructor(
     /** 当前流式回复所属会话;停止时按它收尾,避免会话切换后落到错误会话。 */
     private var streamSessionId: String? = null
 
-    /** 工具调用单次对话最多执行的轮数(模型→工具→模型 记一轮)。 */
+    /** 被端点拒过工具定义的会话:该会话后续轮次不再附带 tools(降级为纯对话,不再反复碰壁)。 */
+    private var toolsRejectedSession: String? = null
+
     private companion object {
         const val TAG = "ChatViewModel"
-
-        const val MAX_TOOL_ROUNDS = 6
 
         /** 诊断日志开关:排查「后段消息不落库」这类流式写库时序问题时打开,定位后可关。 */
         const val LOG_DB_TRACE = true
@@ -184,6 +186,20 @@ class ChatViewModel @Inject constructor(
     /** 当前能力对应的工具集(记忆关闭时不暴露 save_memory / memory_recall)。 */
     private fun activeTools(): List<com.freebuff.core.model.AgentTool> =
         com.freebuff.core.model.DefaultTools.forCapabilities(memory = memoryEnabled)
+
+    /** 深度思考(思维链)模式:off 不思考 / auto 按模型识别 / on 强制开启(设置页三态)。 */
+    private val reasoningModeState: StateFlow<String> = settings.reasoningMode
+        .stateIn(viewModelScope, SharingStarted.Eagerly, com.freebuff.core.model.Reasoning.MODE_AUTO)
+
+    private val reasoningMode: String
+        get() = reasoningModeState.value
+
+    /**
+     * 按当前模型生成思维链请求参数。
+     * 只送该模型所属族认得的字段;识别不了的模型在自动模式下不送(严格端点会对未知字段 400)。
+     */
+    private fun reasoningPlan(target: ChatTarget): com.freebuff.core.model.ReasoningPlan? =
+        com.freebuff.core.model.Reasoning.plan(reasoningMode, target.model)
 
     /** 工具权限覆写(设置页可配置;生效分级 = 覆写 ∪ 默认)。 */
     private val permissionOverridesState: StateFlow<Map<String, ToolPermission>> =
@@ -291,43 +307,65 @@ class ChatViewModel @Inject constructor(
                 _streaming.value = true
                 try {
                     if (!target.isConfigured) {
-                        updateAgentText(session.id, "⚠ 尚未配置官方网关地址\n\n当前为演示构建,请在 app 模块的 buildConfigField 配置 DEFAULT_GATEWAY_BASE_URL,或改用自定义模型。")
+                        updateAgentText(session.id, noModelMessage())
                     } else {
-                        // agent 循环:每轮由 ContextBuilder 重建上下文(记忆+预算),模型可请求工具(最多 MAX_TOOL_ROUNDS 轮)
-                        var round = 0
+                        // agent 循环:每轮由 ContextBuilder 重建上下文(记忆+预算)。
+                        // 延续策略见 core:model AgentLoop —— 还在调工具就继续;动过工具却只回文本(进度播报)
+                        // 时提醒继续;模型调用 task_completed 才算完成;轮次上限只是兜底。
+                        var toolRounds = 0
+                        var nudges = 0
                         val protocol = mutableListOf<ChatMessage>() // 跨轮累积:assistant(tool_calls)+tool 结果(严格协议)
                         while (true) {
                             val roundText = StringBuilder() // 本轮流式输出的文本(回传时作为 assistant content)
-                            if (LOG_DB_TRACE) Log.i(TAG, "round ${round + 1} start sid=${session.id.takeLast(6)}")
+                            if (LOG_DB_TRACE) Log.i(TAG, "round ${toolRounds + 1} start sid=${session.id.takeLast(6)}")
                             val base = buildHistory(session.id, ctxRepo, target)
+                            // 工具可用性:用户开关 + 本会话是否已被端点拒过工具(拒绝后本轮继续纯对话,不再反复碰壁)
+                            val useTools = toolsEnabled && toolsRejectedSession != session.id
                             val calls = runStreamRound(
                                 session.id, target, base + protocol,
-                                toolsJson = if (toolsEnabled) DefaultTools.toJsonArrayString(activeTools()) else "",
+                                toolsJson = if (useTools) DefaultTools.toJsonArrayString(activeTools()) else "",
                                 textSink = roundText,
                             )
                             if (calls == null) {
                                 // 用户停止:外层操作协程已随之被取消,这里只是取消前的常规出口
-                                if (LOG_DB_TRACE) Log.i(TAG, "round stopped-by-user sid=${session.id.takeLast(6)} round=${round + 1}")
+                                if (LOG_DB_TRACE) Log.i(TAG, "round stopped-by-user sid=${session.id.takeLast(6)} round=${toolRounds + 1}")
                                 break
                             }
-                            // 流结束:若有工具调用且未超轮次,执行并回传,继续下一轮
-                            if (calls.isEmpty() || !toolsEnabled || round >= MAX_TOOL_ROUNDS) {
-                                if (calls.isNotEmpty() && round >= MAX_TOOL_ROUNDS) {
-                                    appendAgentText(session.id, "\n\n(工具调用轮次已达上限 $MAX_TOOL_ROUNDS,停止继续执行)")
+                            val completed = calls.any { it.name in com.freebuff.core.model.AgentLoop.END_TOOLS }
+                            if (calls.isNotEmpty()) {
+                                toolRounds++
+                                // 执行工具;结果写入工具卡片(UI)+ 压缩后进入协议消息(下一轮请求)
+                                protocol += ChatMessage.assistantWithCalls(roundText.toString(), calls)
+                                for (c in calls) {
+                                    val outcome = dispatchTool(session.id, c)
+                                    completeToolCard(session.id, c.callId, outcome.content, outcome.isError)
+                                    protocol += ChatMessage.toolResult(c.callId, ContextPolicy.compressToolResult(outcome.content))
                                 }
-                                break
                             }
-                            round++
-                            // 执行工具;结果写入工具卡片(UI)+ 压缩后进入协议消息(下一轮请求)
-                            protocol += ChatMessage.assistantWithCalls(roundText.toString(), calls)
-                            for (c in calls) {
-                                val outcome = dispatchTool(session.id, c)
-                                completeToolCard(session.id, c.callId, outcome.content, outcome.isError)
-                                protocol += ChatMessage.toolResult(c.callId, ContextPolicy.compressToolResult(outcome.content))
+                            val decision = com.freebuff.core.model.AgentLoop.decide(
+                                toolRounds = toolRounds,
+                                toolCalls = calls.size,
+                                toolsEnabled = useTools,
+                                nudgesUsed = nudges,
+                                completed = completed,
+                            )
+                            when (decision) {
+                                com.freebuff.core.model.AgentLoop.Decision.Continue -> Unit
+                                com.freebuff.core.model.AgentLoop.Decision.Stop -> break
+                                is com.freebuff.core.model.AgentLoop.Decision.StopWithNote -> {
+                                    appendAgentText(session.id, decision.note)
+                                    break
+                                }
+                                is com.freebuff.core.model.AgentLoop.Decision.Nudge -> {
+                                    // 只进协议消息,不进正文:下一轮模型会看到「继续推进」的要求
+                                    nudges++
+                                    if (LOG_DB_TRACE) Log.i(TAG, "nudge #$nudges sid=${session.id.takeLast(6)}")
+                                    protocol += ChatMessage.text("system", decision.message)
+                                }
                             }
                         }
                         finishAgent(session.id)
-                        if (LOG_DB_TRACE) Log.i(TAG, "op finish sid=${session.id.takeLast(6)} rounds=${round + 1}")
+                        if (LOG_DB_TRACE) Log.i(TAG, "op finish sid=${session.id.takeLast(6)} rounds=$toolRounds")
                     }
                 } catch (t: Throwable) {
                     // 用户主动停止已由 stopStreaming 收尾;只有真实失败才写错误文案
@@ -378,6 +416,10 @@ class ChatViewModel @Inject constructor(
             is AgentEvent.Text -> {
                 appendAgentText(sessionId, ev.chunk); emptyList()
             }
+            is AgentEvent.Reasoning -> {
+                // 思考(思维链)增量:单独存一列并折叠展示,不进正文、不进下一轮上下文
+                appendAgentReasoning(sessionId, ev.chunk); emptyList()
+            }
             is AgentEvent.ToolCall -> {
                 upsertToolCard(sessionId, ev.callId, ev.tool, ev.input); emptyList()
             }
@@ -393,6 +435,16 @@ class ChatViewModel @Inject constructor(
                     ToolCard.SUBAGENT_PREFIX + ev.agent,
                     ev.chunk,
                 ); emptyList()
+            }
+            is AgentEvent.Notice -> {
+                // 适配层提示(端点不吃工具定义/思考字段):原样告知用户,并记下本会话的降级状态
+                when (ev.kind) {
+                    AgentEvent.Notice.Kind.TOOLS_DROPPED -> toolsRejectedSession = sessionId
+                    AgentEvent.Notice.Kind.REASONING_DROPPED -> Unit
+                    AgentEvent.Notice.Kind.INFO -> Unit
+                }
+                navigator.showSnack(ev.message)
+                emptyList()
             }
             is AgentEvent.Calls -> ev.calls
             AgentEvent.EndTurn -> emptyList()
@@ -422,6 +474,23 @@ class ChatViewModel @Inject constructor(
     }
 
     /** 解析当前模型对应的请求目标(自定义模型读其端点,官方模型走网关)。 */
+    /**
+     * 「没有可用模型」的操作指引:按缺的是「选择」还是「配置」给不同出路,
+     * 避免用户按提示添加了自定义模型却发现真正原因是从没选过模型。
+     */
+    private fun noModelMessage(): String {
+        val picked = modelId.value.isNotBlank()
+        val hasCustom = customModels.value.isNotEmpty()
+        return when {
+            !picked && hasCustom ->
+                "⚠ 还没有选择模型\n\n点上方模型条选择一个模型再发送。"
+            hasCustom ->
+                "⚠ 当前模型不可用\n\n它可能已被删除或缺少端点配置,请在模型列表中选择其他模型。"
+            else ->
+                "⚠ 当前没有可用模型\n\n请到 设置 → 自定义模型 添加一个 OpenAI 兼容端点,再在模型列表中选择它。\n(官方模型需要在构建时配置官方网关地址)"
+        }
+    }
+
     private fun resolveTarget(): ChatTarget {
         val id = modelId.value
         val custom = customModels.value.firstOrNull { it.id == id }
@@ -645,6 +714,7 @@ class ChatViewModel @Inject constructor(
                         skipTLS = target.skipTLS,
                         history = history,
                         toolsJson = toolsJson,
+                        reasoning = reasoningPlan(target),
                     ).collect { ev ->
                         if (ev is com.freebuff.core.model.AgentEvent.Text) textSink?.append(ev.chunk)
                         handleAgentEvent(sessionId, ev)?.let { calls = it }
@@ -705,6 +775,13 @@ class ChatViewModel @Inject constructor(
         val s = sessionRepo.get(sessionId) ?: return
         val last = s.messages.lastOrNull { it.role == "agent" } ?: return
         sessionRepo.replaceMessage(sessionId, last.id, last.copy(text = last.text + chunk))
+    }
+
+    /** 追加思考(思维链)内容:单独存储,不混进正文(复制正文/上下文重建都不带它)。 */
+    private suspend fun appendAgentReasoning(sessionId: String, chunk: String) {
+        val s = sessionRepo.get(sessionId) ?: return
+        val last = s.messages.lastOrNull { it.role == "agent" } ?: return
+        sessionRepo.replaceMessage(sessionId, last.id, last.copy(reasoning = last.reasoning + chunk))
     }
 
     private suspend fun updateAgentText(sessionId: String, text: String) {

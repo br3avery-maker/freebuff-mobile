@@ -11,12 +11,15 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -38,6 +41,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -123,6 +127,11 @@ fun FreebuffRoot(navigator: AppNavigator) {
     CompositionLocalProvider(LocalAppNavigator provides navigator) {
         FreebuffTheme(darkTheme = dark) {
             CompositionLocalProvider(LocalTokens provides tokens) {
+                // 弹窗(Dialog)要自己避让导航条,而根 Box 的 navigationBarsPadding() 会消费掉
+                // 这些 insets(子树里再读只能是 0),所以在根 Box 之前先把真实值取出来。
+                val dlgNavBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+                // Dialog 窗口是 wrap-content,fillMaxHeight 拿不到可用高,只能自己算
+                val screenHeight = LocalConfiguration.current.screenHeightDp.dp
                 val snackHost = remember { SnackbarHostState() }
                 val snackMessage = navState.snackMessage
                 LaunchedEffect(snackMessage) {
@@ -142,7 +151,6 @@ fun FreebuffRoot(navigator: AppNavigator) {
                     if (navState.route == AppNavState.ROUTE_HOME || navState.route == AppNavState.ROUTE_SETTINGS) {
                         BottomBar(navigator, Modifier.align(Alignment.BottomCenter))
                     }
-                    SnackbarHost(snackHost, Modifier.align(Alignment.BottomCenter).padding(bottom = 96.dp))
                     navState.sheet?.let { id ->
                         if (id.startsWith("sess-menu:")) {
                             ModalSheetHost(false, { navigator.closeSheet() }) {
@@ -151,7 +159,10 @@ fun FreebuffRoot(navigator: AppNavigator) {
                         } else if (id == AppNavState.SHEET_CUSTOM_FORM ||
                             id.startsWith(AppNavState.SHEET_CUSTOM_FORM + ":")
                         ) {
-                            // 自定义模型表单:居中弹窗(Dialog),内容长的表单比底部面板更聚焦
+                            // 自定义模型表单:居中弹窗(Dialog),内容长的表单比底部面板更聚焦。
+                            // 页脚避让导航条用 dlgNavBottom(在主窗口算好的真实内边距):Dialog 窗口里
+                            // navigationBarsPadding() 拿不到值(实测页脚按钮有 66px 压在导航条下,
+                            // 「保存」摸不到一半);顶部不用加——Dialog 窗口本身已从状态栏下沿开始。
                             val editId = id.removePrefix(AppNavState.SHEET_CUSTOM_FORM)
                                 .removePrefix(":").ifBlank { null }
                             androidx.compose.ui.window.Dialog(
@@ -161,10 +172,16 @@ fun FreebuffRoot(navigator: AppNavigator) {
                                     decorFitsSystemWindows = false,
                                 ),
                             ) {
-                                    Box(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 18.dp, vertical = 24.dp),
+                                    Box(Modifier.fillMaxSize()
+                                        .padding(bottom = dlgNavBottom + 24.dp, top = 24.dp)
+                                        .padding(horizontal = 18.dp),
                                         contentAlignment = Alignment.Center) {
                                         Column(
+                                            // 必须显式限高:表单内容本身比屏幕高,Dialog 窗口又是 wrap-content,
+                                            // 只加 padding 时卡片会撑破避让区域、页脚重新压回导航条(实测 2306 > 2274)。
+                                            // 用屏幕高 - 导航条内边距 - 留白 封顶,表单内部滚动、页脚固定在可用区内。
                                             Modifier.fillMaxWidth()
+                                                .heightIn(max = screenHeight - dlgNavBottom - 72.dp)
                                                 .clip(RoundedCornerShape(22.dp))
                                                 .background(tokens.elev)
                                                 .border(1.dp, tokens.border, RoundedCornerShape(22.dp))
@@ -191,6 +208,9 @@ fun FreebuffRoot(navigator: AppNavigator) {
                             }
                         }
                     }
+                    // 提示条必须画在弹层之后(z 序靠后):否则弹层期间的用户反馈
+                    // (如 Git 授权失败原因)会被弹层面板盖住 —— 表现就是「点了没反应」
+                    SnackbarHost(snackHost, Modifier.align(Alignment.BottomCenter).padding(bottom = 96.dp))
                 }
             }
         }

@@ -9,7 +9,6 @@ import com.freebuff.core.data.network.buildDefaultClient
 import com.freebuff.core.data.repository.ChatRepository
 import com.freebuff.core.data.repository.CustomModelRepository
 import com.freebuff.core.data.repository.DataMigrator
-import com.freebuff.core.data.repository.DemoGitAuthRepository
 import com.freebuff.core.data.repository.GitAuthRepository
 import com.freebuff.core.data.repository.MemoryRepository
 import com.freebuff.core.data.repository.ModelCatalogRepository
@@ -82,7 +81,7 @@ object DataModule {
         client: OkHttpClient,
     ): FreebuffApi = FreebuffApi(gatewayBaseUrl, client)
 
-    /** 官方模型目录:网关实时 + 内置回退。 */
+    /** 官方模型目录:仅来自官方网关实时拉取。 */
     @Provides
     @Singleton
     fun provideModelCatalogRepository(api: FreebuffApi): ModelCatalogRepository =
@@ -94,16 +93,12 @@ object DataModule {
     fun provideGithubApi(client: OkHttpClient): GithubApi = GithubApi(client)
 
     /**
-     * Git 账号接入:配置了 GITHUB_OAUTH_CLIENT_ID 走真实设备流,否则回退演示实现。
-     * 两种实现共享同一阶段协议,UI 无需分支。
+     * Git 账号接入:GitHub OAuth 设备流。
+     * 未配置 GITHUB_OAUTH_CLIENT_ID 时授权会直接报「未配置」,不再回退演示账号/仓库。
      */
     @Provides
     @Singleton
-    fun provideGitAuthRepository(
-        demo: DemoGitAuthRepository,
-        real: RealGitAuthRepository,
-        @Named("githubClientId") clientId: String,
-    ): GitAuthRepository = if (clientId.isBlank()) demo else real
+    fun provideGitAuthRepository(real: RealGitAuthRepository): GitAuthRepository = real
 
     @Provides
     @Singleton

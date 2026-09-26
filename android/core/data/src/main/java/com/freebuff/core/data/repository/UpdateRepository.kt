@@ -2,6 +2,7 @@ package com.freebuff.core.data.repository
 
 import com.freebuff.core.data.network.ApiError
 import com.freebuff.core.data.network.ApiResult
+import com.freebuff.core.data.network.HttpTarget
 import com.freebuff.core.data.network.apiCallIo
 import com.freebuff.core.model.RemoteVersion
 import okhttp3.OkHttpClient
@@ -22,6 +23,17 @@ class UpdateRepository @Inject constructor(
 ) {
     val isConfigured: Boolean get() = updateUrl.isNotBlank()
 
+    /** 更新源主机名(如 raw.githubusercontent.com),用于失败提示里指明到底连的哪里。 */
+    val sourceLabel: String
+        get() = when {
+            updateUrl.isBlank() -> ""
+            else -> try {
+                java.net.URI(updateUrl).host ?: updateUrl
+            } catch (t: Throwable) {
+                updateUrl
+            }
+        }
+
     suspend fun check(): ApiResult<RemoteVersion> {
         if (!isConfigured) return ApiResult.Err(ApiError.NotConfigured("更新源地址"))
         return apiCallIo {
@@ -33,7 +45,8 @@ class UpdateRepository @Inject constructor(
                 .build()
             client.newCall(req).execute().use { r ->
                 val body = r.body?.string().orEmpty()
-                if (!r.isSuccessful) throw ApiError.Http(r.code, body.take(300))
+                // 上下文标记为更新源:避免 404 报成「请确认 /chat/completions 路径」
+                if (!r.isSuccessful) throw ApiError.Http(r.code, body.take(300), HttpTarget.UpdateSource)
                 val o = try {
                     JSONObject(body)
                 } catch (t: Throwable) {

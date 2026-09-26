@@ -53,10 +53,10 @@ fun WelcomeScreen(viewModel: WelcomeViewModel = hiltViewModel()) {
         Spacer(Modifier.weight(1f))
         PrimaryBtn("登录 Freebuff 账号") { viewModel.enter(signedIn = true) }
         Spacer(Modifier.height(10.dp))
-        Text("先逛逛(访客演示)", color = t.text3, fontSize = 14.sp,
+        Text("先逛逛(访客模式)", color = t.text3, fontSize = 14.sp,
             modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable { viewModel.enter(signedIn = false) }.padding(12.dp))
         Spacer(Modifier.height(8.dp))
-        Text("游客演示 · 数据仅存于本机", color = t.text3, fontSize = 11.sp,
+        Text("访客模式 · 数据仅存于本机", color = t.text3, fontSize = 11.sp,
             modifier = Modifier.padding(bottom = 24.dp))
     }
 }

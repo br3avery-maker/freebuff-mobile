@@ -5,6 +5,7 @@ import java.net.ConnectException
 import java.net.NoRouteToHostException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+import java.net.UnknownServiceException
 import javax.net.ssl.SSLException
 
 /* ---------------- 统一错误分类 ---------------- */
@@ -36,14 +37,26 @@ sealed class ApiError(message: String, cause: Throwable? = null) : Exception(mes
     class StreamIdle(val idleMs: Long) : ApiError("连接超时:超过 " + (idleMs / 1000) + " 秒没有收到任何流式数据,已自动停止。请检查端点状态或换个模型再试")
 
     /** HTTP 非 2xx:保留状态码与响应片段,便于定位鉴权/路径/限流问题。 */
-    class Http(val code: Int, val body: String = "") : ApiError(httpErrorMessage(code))
+    class Http(
+        val code: Int,
+        val body: String = "",
+        val target: HttpTarget = HttpTarget.Model,
+    ) : ApiError(httpErrorMessage(code, target))
 
     /** 2xx 但响应结构无法解析。 */
     class Parse(detail: String = "") :
         ApiError(if (detail.isBlank()) "响应格式无法解析" else "响应格式无法解析:$detail")
 
     /** 必要配置缺失(网关地址 / 更新源 / Git 授权)。 */
-    class NotConfigured(what: String) : ApiError(what + "未配置")
+    class NotConfigured(what: String) : ApiError(withConfiguredSuffix(what))
+
+    /**
+     * 明文 HTTP 被系统拦住(targetSdk 28+ 默认禁止 cleartext)。
+     * 自建更新源写成 http:// 时走到这里 —— 直接告诉用户改成 https,而不是回
+     * OkHttp 的英文异常原文。
+     */
+    class CleartextBlocked(cause: Throwable? = null) :
+        ApiError("地址不被允许:Android 默认禁止明文 HTTP,请把该地址换成 https", cause)
 
     /** 调用方主动取消。 */
     class Cancelled : ApiError("请求已取消")
@@ -54,18 +67,44 @@ sealed class ApiError(message: String, cause: Throwable? = null) : Exception(mes
     val userMessage: String get() = message ?: "请求失败"
 }
 
+/**
+ * 「X 未配置」的中英混排:what 以 ASCII 字符结尾时补一个空格
+ * (「GitHub OAuth client_id 未配置」而不是「client_id未配置」)。
+ */
+private fun withConfiguredSuffix(what: String): String {
+    val last = what.lastOrNull() ?: return "未配置"
+    return if (last.code in 33..127) what + " 未配置" else what + "未配置"
+}
+
+/**
+ * HTTP 错误文案的归属。
+ * 状态码一样但要说的话不一样:404 在模型端点是「/chat/completions 路径不对」,
+ * 在版本更新源则是「更新地址没有这个文件」—— 直接复用会把用户指向错误的方向。
+ */
+enum class HttpTarget { Model, UpdateSource }
+
 /** HTTP 状态码 → 可读文案(与产品和原型文案保持一致)。 */
-fun httpErrorMessage(code: Int): String = when (code) {
-    400 -> "请求无效(400):请检查模型 ID 与请求体"
-    401 -> "鉴权失败(401):请检查 API Key"
-    403 -> "无权限(403):API Key 无权访问该模型"
-    404 -> "端点不存在(404):请确认 /chat/completions 路径"
-    408 -> "服务端超时(408):请稍后再试"
-    409 -> "请求冲突(409):请稍后再试"
-    422 -> "参数不合法(422):请检查模型 ID 与端点"
-    429 -> "请求过于频繁(429):请稍后再试"
-    in 500..599 -> "服务端错误($code):请稍后再试"
-    else -> "请求失败(HTTP $code)"
+fun httpErrorMessage(code: Int, target: HttpTarget = HttpTarget.Model): String = when (target) {
+    HttpTarget.Model -> when (code) {
+        400 -> "请求无效(400):请检查模型 ID 与请求体"
+        401 -> "鉴权失败(401):请检查 API Key"
+        403 -> "无权限(403):API Key 无权访问该模型"
+        404 -> "端点不存在(404):请确认 /chat/completions 路径"
+        408 -> "服务端超时(408):请稍后再试"
+        409 -> "请求冲突(409):请稍后再试"
+        422 -> "参数不合法(422):请检查模型 ID 与端点"
+        429 -> "请求过于频繁(429):请稍后再试"
+        in 500..599 -> "服务端错误($code):请稍后再试"
+        else -> "请求失败(HTTP $code)"
+    }
+
+    HttpTarget.UpdateSource -> when (code) {
+        401, 403 -> "更新源拒绝访问($code):请确认该地址无需登录即可读取"
+        404 -> "更新源不存在(404):请检查更新地址是否指向版本信息文件"
+        429 -> "更新源请求过于频繁(429):请稍后再试"
+        in 500..599 -> "更新源服务端错误($code):请稍后再试"
+        else -> "检查更新失败(HTTP $code)"
+    }
 }
 
 /**
@@ -81,6 +120,7 @@ fun Throwable.toApiError(httpCode: Int? = null): ApiError {
         is SSLException -> ApiError.Tls(this)
         is ConnectException -> ApiError.Unreachable(this)
         is NoRouteToHostException -> ApiError.Unreachable(this)
+        is UnknownServiceException -> ApiError.CleartextBlocked(this)
         is CancellationException -> ApiError.Cancelled()
         else -> ApiError.Unknown(this)
     }

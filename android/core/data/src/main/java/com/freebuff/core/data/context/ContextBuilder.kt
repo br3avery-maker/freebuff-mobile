@@ -4,6 +4,7 @@ import com.freebuff.core.data.network.ChatMessage
 import com.freebuff.core.model.ChatMsg
 import com.freebuff.core.model.ContextBudget
 import com.freebuff.core.model.ContextPolicy
+import com.freebuff.core.model.AgentLoop
 import com.freebuff.core.model.ContextStats
 import com.freebuff.core.model.MemoryBlock
 import com.freebuff.core.model.MemoryCodec
@@ -64,8 +65,13 @@ class ContextBuilder @Inject constructor() {
                 append("\n\n## 工作记忆(按当前问题从记忆库检索;与当前问题无关则忽略)\n")
                 append(workingMemory)
             }
-            append("\n\n你是 Freebuff 助手。可使用提供的工具获取实时信息(联网搜索/GitHub/计算/时间);")
-            append("回答保持简洁,工具结果仅供你参考加工。")
+            append("\n\n你是 Freebuff 助手。可使用提供的工具获取实时信息(联网搜索/GitHub/计算/时间)。")
+            // 早停(「几句话就停」)的两道提示防线:多步任务要推进到完成;完成必须有显式信号
+            append("闲聊与单轮问答保持简洁;多步任务要持续推进到目标达成为止 —— 每轮用工具推进下一步,")
+            append("不要只描述计划、也不要中途停下汇报进度。")
+            append("任务真正完成时调用 ").append(AgentLoop.COMPLETION_TOOL)
+                .append("(summary 写清做了什么与遗留事项);需要用户决定时才停下来提问。")
+            append("工具结果仅供你参考加工。")
             append("\n记忆工具:memory_recall 按需检索历史记忆(用户偏好/关键事实/任务进度),save_memory 更新核心记忆块(persona=你的身份,user=关于用户,project=任务焦点)。")
             append("当前用户 user_id=").append(userId).append('。')
         }

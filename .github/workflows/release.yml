@@ -3,13 +3,15 @@ name: Android Release
 # 标签触发发版:push 一个 v* 标签 → 跑测试 → 打 release APK → 自动创建 GitHub Release 并附上产物。
 #
 # 发版步骤(替代手工流程):
-#   1. 把 android/app/build.gradle.kts 的 versionCode/versionName 与 LATEST_VERSION 提到新版本并提交推送
+#   1. 把 android/version.properties 的 versionCode/versionName 提到新版本并提交推送
+#      (版本号唯一来源:app 的 versionName 与 core:model 的 LATEST_VERSION 都由它派生)
 #   2. 等 Android CI 全绿
 #   3. git tag -a v0.X.Y -m "..." && git push origin v0.X.Y
 #
 # 工作流会校验「标签 = versionName」,不匹配直接失败 —— 防止发出版本号对不上的包。
 # Release 说明自动取上一个标签到本标签之间的提交标题,发完后可在 Releases 页面编辑润色。
-# 发版完成后会自动刷新 dist/update.json(检查更新的数据源)并回推 main。
+# 发版完成后会用 scripts/update-manifest.py 重建 dist/update.json(检查更新的数据源)并回推 main,
+# 再自证线上(API + raw)已读到同一版本 —— 回推失败或版本对不上会直接把本次发版判为失败。
 
 on:
   push:
@@ -48,15 +50,20 @@ jobs:
       - name: Set up Gradle (dependency cache)
         uses: gradle/actions/setup-gradle@v5
 
+      # 版本号唯一来源 = android/version.properties(app 的 versionName 与 core:model 的 LATEST_VERSION 均由它派生)
       - name: Verify tag matches versionName
         run: |
           TAG="${GITHUB_REF_NAME#v}"
           # 预发布标签(v0.X.Y-rc1/-beta2)取主版本部分比对,versionName 不携带后缀
           TAG_BASE="${TAG%%-*}"
-          VER=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
+          VER=$(sed -n 's/^versionName[[:space:]]*=[[:space:]]*//p' version.properties | tr -d ' \r' | head -1)
           echo "tag=$TAG base=$TAG_BASE versionName=$VER"
+          if [ -z "$VER" ]; then
+            echo "::error::读不到 android/version.properties 的 versionName"
+            exit 1
+          fi
           if [ "$TAG_BASE" != "$VER" ]; then
-            echo "::error::标签 v$TAG 与 versionName $VER 不一致 —— 请先提交版本号提升再打标签"
+            echo "::error::标签 v$TAG 与 versionName $VER 不一致 —— 请先提交 android/version.properties 的版本号提升再打标签"
             exit 1
           fi
 
@@ -99,48 +106,70 @@ jobs:
             --title "Freebuff Mobile ${GITHUB_REF_NAME}" \
             --notes-file release-notes.md
 
-      # 发版后刷新 dist/update.json —— 这是 App 内「检查更新」拉取的数据源(UPDATE_URL 直链它)。
-      # 用 python 生成 JSON 免去 shell 转义地狱;提交说明以 [skip ci] 结尾避免触发 android.yml。
-      # 冲突容忍:回推被抢先时重拉一次再改;偶尔仍失败不影响 Release 本身(已发布),下次发版会覆盖。
+      # 发版后重建 dist/update.json —— App 内「检查更新」拉取的数据源(UPDATE_URL 默认直链它)。
+      # 生成与校验共用 scripts/update-manifest.py(CI 的 --check 与本地/发版同一份规则)。
+      # 提交说明以 [skip ci] 结尾避免触发 android.yml。
+      # 回推被抢先时重拉重试;三次都推不上去 = 更新通道停在旧版本,直接把本次发版判失败。
       - name: Refresh update.json (in-app update source)
+        id: manifest
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           cd "${GITHUB_WORKSPACE}"
           VER="${GITHUB_REF_NAME#v}"
           PREV=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
-          python3 - "$VER" "$PREV" <<'PYEOF'
-          import json, subprocess, sys
-
-          ver, prev = sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else ""
-          notes = []
-          if prev:
-              out = subprocess.run(
-                  ["git", "log", "--pretty=format:%s", f"{prev}..{ver}"],
-                  capture_output=True, text=True,
-              ).stdout
-              notes = [ln.strip() for ln in out.splitlines() if ln.strip()]
-          payload = {"version": ver, "url": f"https://github.com/{os.environ.get('GITHUB_REPOSITORY', 'doubao01/freebuff-mobile')}/releases/latest", "notes": notes or ["自动发版"]}
-
-          import os
-          path = "dist/update.json"
-          os.makedirs("dist", exist_ok=True)
-          with open(path, "w", encoding="utf-8") as f:
-              json.dump(payload, f, ensure_ascii=False, indent=2)
-              f.write("\n")
-          print(f"dist/update.json -> {ver}, {len(payload['notes'])} notes")
-          PYEOF
-          if ! git diff --quiet -- dist/update.json; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add dist/update.json
-            git commit -m "发版 ${GITHUB_REF_NAME}:刷新检查更新数据源 [skip ci]"
-            for i in 1 2 3; do
-              if git push origin HEAD:main; then break; fi
-              echo "push 失败,第 $i 次重拉重试…"
-              git fetch origin main
-              git rebase origin/main || git rebase --abort
-            done
-          else
+          python3 scripts/update-manifest.py "$VER" --prev "$PREV" --ref "${GITHUB_REF_NAME}"
+          python3 scripts/update-manifest.py --check
+          if git diff --quiet -- dist/update.json; then
             echo "dist/update.json 无变化,跳过回推"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dist/update.json
+          git commit -m "发版 ${GITHUB_REF_NAME}:刷新检查更新数据源 [skip ci]"
+          pushed=0
+          for i in 1 2 3; do
+            if git push origin HEAD:main; then pushed=1; break; fi
+            echo "push 失败,第 $i 次重拉重试…"
+            git fetch origin main
+            git rebase origin/main || git rebase --abort
+          done
+          if [ "$pushed" != "1" ]; then
+            echo "::error::dist/update.json 回推 main 失败 —— 更新通道会停在 v$PREV。请在 Actions 里重跑本工作流"
+            exit 1
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      # 自证更新通道:回推后从 GitHub API 确认线上清单就是本次版本(权威,非 CDN),
+      # 再轮询 raw 直链(用户 App 实际请求的地址)记录 CDN 是否已跟上。
+      - name: Verify published update source
+        if: steps.manifest.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd "${GITHUB_WORKSPACE}"
+          VER="${GITHUB_REF_NAME#v}"
+          GOT=""
+          for i in $(seq 1 6); do
+            GOT=$(gh api -H "Accept: application/vnd.github.raw" \
+              "repos/${GITHUB_REPOSITORY}/contents/dist/update.json" 2>/dev/null \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version",""))' 2>/dev/null || true)
+            echo "第 $i 次(API):线上 update.json version='$GOT'"
+            [ "$GOT" = "$VER" ] && break
+            sleep 10
+          done
+          if [ "$GOT" != "$VER" ]; then
+            echo "::error::线上 dist/update.json 不是 v$VER(读到 '$GOT')—— 检查回推是否真的落到 main"
+            exit 1
+          fi
+          RAW="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/main/dist/update.json"
+          for i in $(seq 1 10); do
+            GOT_RAW=$(curl -fsS --max-time 10 "$RAW?cb=$RANDOM" 2>/dev/null \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version",""))' 2>/dev/null || true)
+            echo "第 $i 次(raw/CDN):'$GOT_RAW'"
+            [ "$GOT_RAW" = "$VER" ] && { echo "更新源已可匿名读取且版本一致:v$VER"; exit 0; }
+            sleep 15
+          done
+          echo "::warning::raw 仍是 CDN 缓存中的旧版本(不影响发布,App 稍后拉取即可拿到 v$VER)"

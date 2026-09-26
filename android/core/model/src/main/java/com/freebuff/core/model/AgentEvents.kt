@@ -11,6 +11,12 @@ sealed interface AgentEvent {
     data class Text(val chunk: String) : AgentEvent
 
     /**
+     * 思考(思维链)增量:渲染为可折叠的「思考过程」块,不计入正文。
+     * 来源字段:`delta.reasoning_content`(事实标准)/ `reasoning` / `thinking`。
+     */
+    data class Reasoning(val chunk: String) : AgentEvent
+
+    /**
      * 工具调用开始或更新。OpenAI 兼容流的 arguments 增量会按 callId 多次到达,
      * App 端按 callId upsert 卡片,以最后一次到达的 input 为准。
      */
@@ -21,6 +27,23 @@ sealed interface AgentEvent {
 
     /** 后端 error 事件(参数校验/权限/分类错误已自带归因语境),原样展示。 */
     data class Failure(val message: String) : AgentEvent
+
+    /**
+     * 非致命提示:适配层/网关的说明(如「该端点不接受工具定义,已按纯对话继续」)。
+     * 与 [Failure] 不同,它不终止本轮;UI 以提示条形式展示,调用方按 [Kind] 决定后续行为。
+     */
+    data class Notice(val message: String, val kind: Kind = Kind.INFO) : AgentEvent {
+        enum class Kind {
+            /** 一般信息。 */
+            INFO,
+
+            /** 端点不接受工具定义:本会话后续轮次不要再带 tools。 */
+            TOOLS_DROPPED,
+
+            /** 端点不认识思考参数:本会话后续轮次不要再带思考字段。 */
+            REASONING_DROPPED,
+        }
+    }
 
     /** 子代理流式输出(如 context-pruner / thinker 的后台过程)。 */
     data class SubagentChunk(val agent: String, val chunk: String) : AgentEvent

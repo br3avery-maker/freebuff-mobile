@@ -8,11 +8,15 @@ on:
     branches: [main, develop]
     paths:
       - 'android/**'
+      - 'dist/update.json'
+      - 'scripts/**'
       - '.github/workflows/android.yml'
   pull_request:
     branches: [main]
     paths:
       - 'android/**'
+      - 'dist/update.json'
+      - 'scripts/**'
       - '.github/workflows/android.yml'
   # 允许在 Actions 页面手动触发(例如想重新产出 APK 制品时), 不受 paths 限制
   workflow_dispatch:
@@ -51,6 +55,11 @@ jobs:
       # 升级即视为接受 Gradle 的 Terms of Use,对开源仓库不合适(v4 缓存仍是 MIT 行为)
       - name: Set up Gradle (dependency cache)
         uses: gradle/actions/setup-gradle@v5
+
+      # 版本清单守卫:dist/update.json 的版本不得高于 android/version.properties 的产品版本
+      # (高于 = 所有用户都会看到一个永远装不上的「新版本」);发版工作流会用同一脚本重建它。
+      - name: Check update manifest (dist/update.json)
+        run: python3 ../scripts/update-manifest.py --check
 
       # --stacktrace:失败时直接给出仓库/依赖级别的真实原因, 不用再补一次只能看个结论的构建
       - name: Unit tests (pure JVM + MockWebServer)

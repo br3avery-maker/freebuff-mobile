@@ -25,7 +25,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.freebuff.core.model.FEEDBACK_URL
-import com.freebuff.core.model.LATEST_VERSION
 import com.freebuff.core.model.OFFICIAL_SITE
 import com.freebuff.core.model.ToolPermission
 import com.freebuff.core.ui.RowCard
@@ -99,6 +98,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val repoParse by viewModel.repoParse.collectAsState()
     val toolsEnabled by viewModel.toolsEnabled.collectAsState()
     val memoryEnabled by viewModel.memoryEnabled.collectAsState()
+    val reasoningMode by viewModel.reasoningMode.collectAsState()
     val customModels by viewModel.customModels.collectAsState()
     val sessionCount by viewModel.sessionCount.collectAsState()
     val clearArmed by viewModel.clearArmed.collectAsState()
@@ -124,7 +124,8 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             SectionLabel("模型", Modifier.padding(top = 18.dp, bottom = 8.dp))
             RowCard {
                 SetRow(
-                    icon = "⚡",
+                    // 图标一律用等宽字形符号:emoji(⚡/🗑/💬)在浅色主题下只按自己的彩色渲染,实测对比度仅 1.5–2.6:1
+                    icon = "✦",
                     title = modelName.ifBlank { "选择模型" },
                     sub = "点击选择对话使用的模型",
                     onClick = { viewModel.openModelSheet() },
@@ -145,6 +146,31 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 SegRow(listOf("开启", "关闭"), if (memoryEnabled) 0 else 1) { i ->
                     viewModel.setMemoryEnabled(i == 0)
                 }
+                Spacer(Modifier.height(14.dp))
+                Text("深度思考", color = t.text2, fontSize = 13.5.sp,
+                    modifier = Modifier.padding(bottom = 10.dp))
+                SegRow(
+                    listOf("关闭", "自动", "开启"),
+                    when (reasoningMode) {
+                        com.freebuff.core.model.Reasoning.MODE_OFF -> 0
+                        com.freebuff.core.model.Reasoning.MODE_ON -> 2
+                        else -> 1
+                    },
+                ) { i ->
+                    viewModel.setReasoningMode(
+                        listOf(
+                            com.freebuff.core.model.Reasoning.MODE_OFF,
+                            com.freebuff.core.model.Reasoning.MODE_AUTO,
+                            com.freebuff.core.model.Reasoning.MODE_ON,
+                        )[i],
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "自动:按模型识别思考参数(DeepSeek 推理 / Qwen3 / GPT-5 / GLM 等);" +
+                        "开启:未识别的模型也试 enable_thinking。思考内容折叠在回复上方的「思考过程」里。",
+                    color = t.text3, fontSize = 10.sp,
+                )
             }
 
             /* ---------------- 集成 ---------------- */
@@ -186,7 +212,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 )
                 Spacer(Modifier.height(4.dp))
                 SetRow(
-                    icon = "🗑",
+                    icon = "✕",
                     title = if (clearArmed) "再次点击确认清除" else "清除全部会话",
                     sub = if (clearArmed) "2 秒内再次点击生效,超时自动取消"
                     else "删除本机全部会话(" + sessionCount + " 个),不可恢复",
@@ -203,14 +229,14 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 SetRow(
                     icon = "ⓘ",
                     title = "关于 Freebuff Mobile",
-                    sub = "概念原型的原生实现 · 说明与后续计划",
+                    sub = "能力说明、数据去向与后续计划",
                     onClick = { navigator.openSheet(AppNavState.SHEET_ABOUT) },
                 )
                 SetRow(
                     icon = "↻",
                     title = "版本",
                     sub = "点击检查最新版本",
-                    trailing = "v" + LATEST_VERSION,
+                    trailing = "v" + viewModel.appVersion,
                     onClick = { navigator.openSheet(AppNavState.SHEET_UPDATE) },
                 )
                 SetRow(
@@ -220,7 +246,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                     onClick = { openExternal(context, OFFICIAL_SITE) },
                 )
                 SetRow(
-                    icon = "💬",
+                    icon = "✎",
                     title = "反馈与建议",
                     sub = "在官方开源仓库提交 issue",
                     onClick = { openExternal(context, FEEDBACK_URL) },
@@ -231,7 +257,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             Spacer(Modifier.height(22.dp))
             Column(Modifier.align(Alignment.CenterHorizontally)) {
                 Text("Freebuff Mobile", color = t.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                Text("v" + LATEST_VERSION, color = t.text3, fontSize = 11.5.sp,
+                Text("v" + viewModel.appVersion, color = t.text3, fontSize = 11.5.sp,
                     modifier = Modifier.padding(top = 3.dp))
                 Text("Made for the Freebuff open-source project", color = t.text3, fontSize = 11.sp,
                     modifier = Modifier.padding(top = 8.dp))

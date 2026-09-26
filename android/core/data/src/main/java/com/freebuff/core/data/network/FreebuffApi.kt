@@ -18,7 +18,7 @@ import javax.inject.Singleton
  * - `GET {gateway}/v1/models` → 官方模型目录
  *
  * 网关地址由 app 模块的 `DEFAULT_GATEWAY_BASE_URL` 注入;未配置时所有调用返回
- * [ApiError.NotConfigured],由上层回退内置目录,不视为错误。
+ * [ApiError.NotConfigured],官方目录保持为空由 UI 提示「未配置」,不视为错误。
  */
 @Singleton
 class FreebuffApi @Inject constructor(

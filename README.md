@@ -61,18 +61,26 @@ android/
 ## 功能现状
 
 **已接真实接口**:流式对话(SSE 增量解析)、官方模型目录(`GET {网关}/v1/models`,失败回退内置目录)、
-自定义模型端点探测、GitHub OAuth 设备流授权与仓库读取、版本检查更新。
+自定义模型端点探测、GitHub OAuth 设备流授权与仓库读取、版本检查更新(真实拉取本仓库公开的
+[`dist/update.json`](dist/update.json),有新版本时直达发布页下载)。
 
-**原型阶段仍在模拟**:Git 授权在未配置 client_id 时回退演示实现;版本检查在未配置 `UPDATE_URL` 时提示未配置。
+**仍需自行配置的能力**:官方模型网关地址与 GitHub OAuth client_id 在 `android/app/build.gradle.kts`
+的 `buildConfigField` 中留空——留空时 UI 明确提示「未配置」,不静默回退演示数据,因此开箱即可编译运行:
 
-三个开关在 `android/app/build.gradle.kts` 的 `buildConfigField` 中,默认留空——留空时行为与纯演示版一致,
-因此开箱即可编译运行:
-
-| 开关 | 作用 | 留空时 |
+| 开关 | 作用 | 未配置时 |
 |---|---|---|
 | `DEFAULT_GATEWAY_BASE_URL` | 官方模型网关根地址 | 使用内置模型目录,UI 明确提示未配置 |
-| `GITHUB_OAUTH_CLIENT_ID` | GitHub OAuth App 的 client_id | Git 账号回退演示实现 |
-| `UPDATE_URL` | 版本检查 JSON 地址 | 版本检查提示未配置 |
+| `GITHUB_OAUTH_CLIENT_ID` | GitHub OAuth App 的 client_id | Git 账号接入不可用,弹层内就地提示未配置 |
+| `UPDATE_URL` | 版本检查 JSON 地址 | 默认已是公开可达的仓库 `dist/update.json`;要换自建更新源时设 `freebuff.updateUrl`(`android/local.properties`)或 `FREEBUFF_UPDATE_URL` |
+
+## 版本号与更新源
+
+`android/version.properties` 是**版本号的唯一来源**:app 的 `versionName`/`versionCode` 与 `core:model` 的
+`LATEST_VERSION` 都由它派生(构建时生成),发版标签必须等于 `versionName`(发布工作流硬校验)。
+
+发版后,发布工作流会用 [`scripts/update-manifest.py`](scripts/update-manifest.py) 重建 `dist/update.json`
+(版本 + 本版提交标题作更新说明)并回推 `main`,再自证线上可匿名读取——App 内「检查更新」拉的就是它;
+CI 会用同一脚本校验清单版本不得高于产品版本,避免出现永远装不上的「新版本」。
 
 ## 签名
 
@@ -87,4 +95,9 @@ scripts/gen-release-keystore.sh
 ## CI
 
 [`.github/workflows/android.yml`](.github/workflows/android.yml) 在 push / PR 时跑单测、lint 与 release 打包,
-并把 APK 作为构建产物上传(使用 runner 自带的 JDK 17 与 Android SDK,不依赖本机 `.toolchain/`)。
+并把 APK 作为构建产物上传(使用 runner 自带的 JDK 17 与 Android SDK,不依赖本机 `.toolchain/`);
+同时校验 `dist/update.json` 的版本不会高于产品版本。
+
+[`.github/workflows/release.yml`](.github/workflows/release.yml) 在推送 `v*` 标签时:跑单测 → 校验「标签 =
+versionName」→ 打 release APK → 建 GitHub Release → 刷新 `dist/update.json` 回推 `main` → 校验线上更新源。
+发版流程详见 [android/docs/build-and-release.md](android/docs/build-and-release.md)。

@@ -48,6 +48,10 @@ object ToolPermissions {
         "calculator" to ToolPermission.ALLOW,
         "current_time" to ToolPermission.ALLOW,
         "memory_recall" to ToolPermission.ALLOW,
+        // 循环控制类:不是真实副作用,是循环的收工信号/子代理派发。
+        // 早期漏登记的后果是每轮结束都弹「工具执行确认」,用户不点循环就卡住(真机实测)。
+        AgentLoop.COMPLETION_TOOL to ToolPermission.ALLOW,
+        Subagent.TOOL_NAME to ToolPermission.ALLOW,
         // 有写入或影响后续行为的:默认需确认
         "save_memory" to ToolPermission.CONFIRM,
     )

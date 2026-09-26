@@ -3,7 +3,6 @@ package com.freebuff.core.data.repository
 import com.freebuff.core.data.network.ApiError
 import com.freebuff.core.data.network.ApiResult
 import com.freebuff.core.data.network.FreebuffApi
-import com.freebuff.core.model.OFFICIAL_MODELS
 import com.freebuff.core.model.OfficialModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -11,31 +10,28 @@ import kotlinx.coroutines.flow.asStateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** 官方目录来源。 */
-enum class CatalogSource { BUILTIN, GATEWAY }
-
 /**
- * 官方模型目录:优先从官方网关实时拉取(`GET /v1/models`),失败时使用内置目录。
+ * 官方模型目录:只来自官方网关 `GET /v1/models`。
  *
  * 行为约定:
- * - 首屏立即有内置目录可用,不阻塞 UI
- * - 网关未配置时不视为错误(不产生 [lastError],也不发请求)
- * - 拉取失败时保留当前目录并记录 [lastError],由设置/模型面板按需展示
+ * - 未配置网关时不发请求、不报错,[official] 保持为空(UI 按「未配置」提示)
+ * - 拉取成功替换目录并置 [loaded];失败保留现有目录并记录 [lastError]
  */
 @Singleton
 class ModelCatalogRepository @Inject constructor(
     private val api: FreebuffApi,
 ) {
-    private val _official = MutableStateFlow(OFFICIAL_MODELS)
+    private val _official = MutableStateFlow<List<OfficialModel>>(emptyList())
     val official: StateFlow<List<OfficialModel>> = _official.asStateFlow()
 
-    private val _source = MutableStateFlow(CatalogSource.BUILTIN)
-    val source: StateFlow<CatalogSource> = _source.asStateFlow()
+    /** 是否至少成功拉到过一次网关目录(用于区分「未配置」「拉取失败」「已就绪」)。 */
+    private val _loaded = MutableStateFlow(false)
+    val loaded: StateFlow<Boolean> = _loaded.asStateFlow()
 
     private val _lastError = MutableStateFlow<ApiError?>(null)
     val lastError: StateFlow<ApiError?> = _lastError.asStateFlow()
 
-    /** 网关是否已配置(未配置时目录固定为内置)。 */
+    /** 网关是否已配置。 */
     val isGatewayConfigured: Boolean get() = api.isConfigured
 
     private var autoTried = false
@@ -53,8 +49,8 @@ class ModelCatalogRepository @Inject constructor(
         val result = api.fetchOfficialModels()
         when (result) {
             is ApiResult.Ok -> {
-                if (result.data.isNotEmpty()) _official.value = result.data
-                _source.value = if (result.data.isNotEmpty()) CatalogSource.GATEWAY else CatalogSource.BUILTIN
+                _official.value = result.data
+                _loaded.value = true
                 _lastError.value = null
             }
             is ApiResult.Err -> _lastError.value = result.error

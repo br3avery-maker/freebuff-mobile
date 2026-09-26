@@ -131,16 +131,18 @@ fun Pill(text: String, color: Color = LocalTokens.current.accent, filled: Boolea
 @Composable
 fun ModelChip(modelName: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val t = LocalTokens.current
+    // 未选模型时:圆点转为告警色、文案转弱 —— 一眼看出「还没选模型」需要用户动手
+    val picked = modelName.isNotBlank()
     Row(
         modifier = modifier.clip(RFull).background(t.chip).clickable { onClick() }
             .padding(start = 9.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(7.dp).clip(RFull).background(t.accent))
+        Box(Modifier.size(7.dp).clip(RFull).background(if (picked) t.accent else t.warn))
         Spacer(Modifier.width(6.dp))
         Text(
             modelName.ifBlank { "选择模型" },
-            color = t.text2, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold,
+            color = if (picked) t.text2 else t.warn, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold,
             maxLines = 1, overflow = TextOverflow.Ellipsis,
             modifier = Modifier.widthIn(max = 170.dp),
         )

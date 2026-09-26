@@ -23,7 +23,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.freebuff.core.data.repository.CatalogSource
 import com.freebuff.core.model.OfficialModel
 import com.freebuff.core.ui.RFull
 import com.freebuff.core.ui.SheetScaffold
@@ -37,8 +36,9 @@ fun ModelSheet(viewModel: ChatViewModel = hiltViewModel()) {
     val navigator = LocalAppNavigator.current
     val all by viewModel.modelList.collectAsState()
     val modelId by viewModel.modelId.collectAsState()
-    val source by viewModel.catalogSource.collectAsState()
+    val catalogLoaded by viewModel.catalogLoaded.collectAsState()
     val catalogError by viewModel.catalogError.collectAsState()
+    val gatewayConfigured = viewModel.gatewayConfigured
     val official = all.filter { it.tier != "custom" }
     val customs = all.filter { it.tier == "custom" }
     SheetScaffold("选择模型", "官方模型与你的自定义模型") {
@@ -47,16 +47,26 @@ fun ModelSheet(viewModel: ChatViewModel = hiltViewModel()) {
                 Row(verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp)) {
                     Text(
-                        if (source == CatalogSource.GATEWAY) "官方模型 · 网关实时" else "官方模型 · 内置目录",
-                        color = if (catalogError != null) t.warn else t.text3,
+                        when {
+                            !gatewayConfigured -> "官方模型 · 未配置网关"
+                            catalogLoaded -> "官方模型 · 网关实时"
+                            else -> "官方模型 · 尚未拉取"
+                        },
+                        color = if (catalogError != null || !gatewayConfigured) t.warn else t.text3,
                         fontSize = 11.5.sp, fontWeight = FontWeight.Medium,
                         modifier = Modifier.weight(1f),
                     )
-                    Text("刷新", color = t.accent, fontSize = 11.5.sp, fontWeight = FontWeight.Bold,
-                        modifier = Modifier.clip(RFull).clickable { viewModel.refreshCatalog() }
-                            .padding(horizontal = 10.dp, vertical = 4.dp))
+                    if (gatewayConfigured) {
+                        Text("刷新", color = t.accent, fontSize = 11.5.sp, fontWeight = FontWeight.Bold,
+                            modifier = Modifier.clip(RFull).clickable { viewModel.refreshCatalog() }
+                                .padding(horizontal = 10.dp, vertical = 4.dp))
+                    }
                 }
-                if (catalogError != null) {
+                if (!gatewayConfigured) {
+                    Text("本次构建未配置官方网关,官方模型不可用;添加自定义模型即可使用。",
+                        color = t.text3, fontSize = 11.sp, lineHeight = 15.sp,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
+                } else if (catalogError != null) {
                     Text("目录拉取失败:" + catalogError, color = t.warn, fontSize = 11.sp,
                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
                 }

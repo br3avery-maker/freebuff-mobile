@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  debug 变体专用覆盖:放行对本机/模拟器宿主机的明文 HTTP 端点。
+  用途:对接自建的 OpenAI 兼容服务做联调(模拟器访问宿主机走 10.0.2.2),否则 targetSdk 28+
+  的系统默认会以「明文 HTTP 不被允许」拒绝请求。
+  release 不含此覆盖,线上仍是「禁止明文」的默认策略。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:networkSecurityConfig="@xml/debug_network_security_config" />
+</manifest>

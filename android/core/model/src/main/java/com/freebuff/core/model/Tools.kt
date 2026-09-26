@@ -114,6 +114,12 @@ object DefaultTools {
             ),
         ),
         AgentTool(
+            name = AgentLoop.COMPLETION_TOOL,
+            description = "声明任务完成:确认目标真正达成后才调用,summary 写清做了什么、关键结果与遗留事项。" +
+                "调用后本次循环结束。多步任务在完成前不要用它;也不要只是描述计划就停。",
+            params = listOf(AgentTool.Param("summary", "string", "完成情况:做了什么 + 关键结果 + 遗留事项")),
+        ),
+        AgentTool(
             name = "memory_recall",
             description = "检索记忆库:按 user_id 与 query 返回最相关的历史记忆条目(Top K,默认 5)。适合在回答涉及用户偏好、过往约定、任务进度、以前提供过的事实之前调用;memory_type 可只看长期(偏好/事实)或短期(任务进度)。",
             params = listOf(

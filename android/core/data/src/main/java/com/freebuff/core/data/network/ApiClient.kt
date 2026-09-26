@@ -1,5 +1,8 @@
 package com.freebuff.core.data.network
 
+import com.freebuff.core.model.Reasoning
+import com.freebuff.core.model.ReasoningFlavor
+import com.freebuff.core.model.ReasoningPlan
 import com.freebuff.core.model.ToolCallReq
 import com.freebuff.core.model.endpointUrl
 import okhttp3.MediaType.Companion.toMediaType
@@ -84,20 +87,25 @@ fun buildChatRequest(
     stream: Boolean,
     skipTLS: Boolean,
     toolsJson: String = "",
+    reasoning: ReasoningPlan? = null,
 ): Pair<Request, OkHttpClient> {
     val body = JSONObject()
         .put("model", model)
         .put("stream", stream)
         .put("messages", JSONArray().apply {
             messages.forEach { m ->
-                val o = JSONObject().put("role", m.role).put("content", m.content)
-                if (m.role == "assistant" && m.toolCalls.isNotEmpty()) {
+                val o = JSONObject().put("role", m.role)
+                // 纯工具调用的 assistant 消息不能带空 content:部分严格实现会因此 400,
+                // 空字段直接不发(OpenAI 侧语义等同 content=null)
+                val hasCalls = m.role == "assistant" && m.toolCalls.isNotEmpty()
+                if (m.content.isNotBlank() || !hasCalls) o.put("content", m.content)
+                if (hasCalls) {
                     o.put("tool_calls", JSONArray().apply {
                         m.toolCalls.forEach { c ->
                             put(JSONObject()
                                 .put("id", c.callId)
                                 .put("type", "function")
-                                .put("function", JSONObject().put("name", c.name).put("arguments", c.argsJson.ifBlank { "{}" })))
+                                .put("function", JSONObject().put("name", c.name).put("arguments", c.argumentsOrEmpty())))
                         }
                     })
                 }
@@ -108,6 +116,31 @@ fun buildChatRequest(
             }
         })
     if (toolsJson.isNotBlank()) body.put("tools", JSONArray(toolsJson))
+    // 思维链参数:只送模型所属族认得的字段(core:model 的 Reasoning 负责识别),
+    // 对不认识的模型一个字段都不加 —— 严格实现会对未知字段直接 400
+    //
+    // 特例(Anthropic 兼容 + 工具的已知冲突,LiteLLM 的 modify_params 就是同一个处理):
+    // thinking 模式下回传带 tool_calls 的 assistant 消息时必须同时回传 thinking_blocks,
+    // 而 Chat Completions 协议里根本没有这个字段 —— 客户端回不去,严格网关会 400。
+    // 所以只要历史里已有「带工具调用的 assistant 消息」,本轮就丢掉 thinking 参数(该轮不思考,对话继续)。
+    val thinkinglessToolCall = messages.any { it.role == "assistant" && it.toolCalls.isNotEmpty() }
+    when (reasoning?.flavor) {
+        ReasoningFlavor.EFFORT -> {
+            body.put("reasoning_effort", Reasoning.EFFORT)
+            if (reasoning.maxCompletionTokens > 0) {
+                // 思考 token 与正文共享补全预算:不抬高会被「想完就没额度」截断
+                body.put("max_completion_tokens", reasoning.maxCompletionTokens)
+            }
+        }
+        ReasoningFlavor.ENABLE_THINKING -> body.put("enable_thinking", true)
+        ReasoningFlavor.THINKING_BUDGET -> if (!thinkinglessToolCall) {
+            body.put(
+                "thinking",
+                JSONObject().put("type", "enabled").put("budget_tokens", Reasoning.BUDGET_TOKENS),
+            )
+        }
+        ReasoningFlavor.DEFAULT_ON, ReasoningFlavor.UNKNOWN, null -> Unit
+    }
     val json = body.toString()
     val builder = Request.Builder()
         .url(endpointUrl(endpoint))
@@ -118,10 +151,9 @@ fun buildChatRequest(
 }
 
 /**
- * 提取一行 SSE 文本的 data 载荷(原始 JSON 字符串,不做内容解析)。
+ * 兼容入口:单行 data 载荷提取。多行事件请用 [SseDecoder](它按帧解码)。
  * - 非 "data:" 前缀行返回 null(如注释/空行)
  * - "data: [DONE]" 返回 null(流结束)
- * - 载荷本体交给 [AgentEventParser] 做结构化解析(文本/工具/事件帧)
  */
 fun parseSseData(line: String): String? {
     if (!line.startsWith("data:")) return null
@@ -133,4 +165,11 @@ fun parseSseData(line: String): String? {
  * 把异常/HTTP 码映射成可读文案。
  * 仅保留为兼容入口,分类逻辑已统一收敛到 [toApiError] / [httpErrorMessage]。
  */
+/**
+ * 取一次调用回传时用的参数文本:空参数必须是 `{}`(空串会让严格实现报参数错误;
+ * vercel/ai#6687 就是这个形态导致参数为空的工具永远调不起来)。
+ */
+fun ToolCallReq.argumentsOrEmpty(): String =
+    argsJson.trim().ifBlank { "{}" }
+
 fun mapChatError(t: Throwable, code: Int? = null): String = t.toApiError(code).userMessage

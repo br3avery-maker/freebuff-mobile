@@ -56,18 +56,22 @@ android/
 
 后端 agent 运行时的行为参考(工具注册表、工具调用执行管线、agent 双层循环、事件流契约)见 **[docs/agent-architecture.md](docs/agent-architecture.md)**——对接完整 agent 会话流时,事件类型与渲染语义以此为准。
 
-配置项在 `app/build.gradle.kts` 的 `buildConfigField`(留空即走回退路径,不影响编译与体验):
+配置项在 `app/build.gradle.kts` 的 `buildConfigField`(留空即走「未配置」路径,不影响编译与体验):
 
-| 配置 | 作用 | 留空行为 |
+| 配置 | 作用 | 未配置行为 |
 |---|---|---|
 | `DEFAULT_GATEWAY_BASE_URL` | 官方网关根地址(如 `https://api.example.com/v1`) | 官方目录使用内置列表;官方模型对话提示未配置 |
-| `GITHUB_OAUTH_CLIENT_ID` | GitHub OAuth App 的 client_id | Git 账号回退演示实现(阶段协议一致) |
-| `UPDATE_URL` | 版本检查 JSON 地址 | 版本检查提示未配置 |
+| `GITHUB_OAUTH_CLIENT_ID` | GitHub OAuth App 的 client_id | Git 账号接入不可用,弹层内就地提示未配置 |
+| `UPDATE_URL` | 版本检查 JSON 地址 | 默认已是公开可达的仓库 `dist/update.json`;换自建源用 `freebuff.updateUrl` / `FREEBUFF_UPDATE_URL` |
+
+版本号唯一来源是 [`version.properties`](version.properties):app 的 `versionName`/`versionCode` 与
+`core:model` 的 `LATEST_VERSION` 均由它派生(构建时生成),发版只改这一个文件;发版工作流会用
+[`scripts/update-manifest.py`](../scripts/update-manifest.py) 重建 `dist/update.json` 并回推 `main`。
 
 要点:
 - 所有网络调用返回统一 `ApiResult<T>`(`Ok` / `Err(ApiError)`),错误分类含超时/DNS/连接/TLS/HTTP(保留状态码)/解析/未配置
 - 阻塞式请求统一经 `apiCallIo` 切到 `Dispatchers.IO`;流式对话用异步 `enqueue` + SSE 增量解析
-- 失败永不静默:目录失败保留内置并提示原因、仓库读取失败可重试、更新检查区分「未配置」与「网络失败」
+- 失败永不静默:目录失败保留内置并提示原因、仓库读取失败可重试、更新检查区分「未配置 / 网络失败 / 更新源 404」并指明实际请求的主机名
 
 ## 设计说明
 - 设计令牌与 HTML 原型同源(见 `freebuff-android-prototype/css/app.css`),替换品牌色只需改 `core:ui` 的 `Theme.kt`

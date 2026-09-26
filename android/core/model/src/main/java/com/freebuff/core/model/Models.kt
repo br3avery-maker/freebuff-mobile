@@ -50,11 +50,15 @@ data class OfficialModel(
 /** 对话消息中 agent 的阶段性步骤(如"规划"/"执行")。 */
 data class MsgStep(val name: String, val sub: String)
 
-/** 单条对话消息。role: user | agent。tools 为消息内嵌的工具卡片(agent 消息专用)。 */
+/**
+ * 单条对话消息。role: user | agent。tools 为消息内嵌的工具卡片(agent 消息专用)。
+ * reasoning 为模型输出的思考(思维链)内容 —— 单独存储,不进正文与后续请求上下文。
+ */
 data class ChatMsg(
     val id: String,
     val role: String,
     val text: String = "",
+    val reasoning: String = "",
     val time: String = "",
     val steps: List<MsgStep> = emptyList(),
     val md: String = "",
@@ -66,13 +70,18 @@ data class ChatMsg(
     val tools: List<ToolCard> = emptyList(),
 )
 
-/** 会话。messages 为会话内消息(内存中完整持有,持久化见 core:data Room)。 */
+/**
+ * 会话。messages 为会话内消息(内存中完整持有,持久化见 core:data Room)。
+ * createdAt 为创建时刻(epoch ms),会话列表按它分「今天/昨天/7 天内/更早」。
+ * 0 表示早期版本落库、没有时间戳的会话 —— 分桶时不猜时间,一律归入「更早」。
+ */
 data class Session(
     val id: String,
     val title: String,
     val time: String,
     val preview: String,
     val messages: List<ChatMsg>,
+    val createdAt: Long = 0L,
 )
 
 data class RepoItem(val name: String, val branch: String, val desc: String)
@@ -83,7 +92,8 @@ data class TaskDraft(
     val repoUrl: String = "",
     val repoName: String = "",
     val repoBranch: String = "",
-    val modelId: String = "deepseek-v4-flash",
+    // 空表示「还没选」:向导用当前对话模型填充,不再硬编码一个演示模型
+    val modelId: String = "",
     val desc: String = "",
     val step: Int = 0,
 )
@@ -99,9 +109,7 @@ data class RepairReport(
     val raw: List<Any?>? = null,
 )
 
-/** 版本检查:小于当前版本号视为有更新。 */
-const val LATEST_VERSION = "0.0.1"
-
+/** 版本检查:小于当前版本号视为有更新。[LATEST_VERSION] 见构建生成的 BuildVersion.kt(源:android/version.properties)。 */
 /** 一次对话的完整请求目标(由模型解析而来,官方/自定义统一)。 */
 data class ChatTarget(
     val endpoint: String,
@@ -113,7 +121,12 @@ data class ChatTarget(
     /** 上下文窗口声明("128k"/"1m"/"200000"),空串用默认保守值。 */
     val ctxWindow: String = "",
 ) {
-    val isConfigured: Boolean get() = endpoint.isNotBlank()
+    /**
+     * 可用:端点与模型名都非空。
+     * 缺模型名时必须判定为不可用 —— 否则会拿空 model 发请求,
+     * 用户看到的是服务端的「模型不存在」而非「请先选择模型」。
+     */
+    val isConfigured: Boolean get() = endpoint.isNotBlank() && model.isNotBlank()
 }
 
 /** 远程版本检查结果。 */
@@ -159,11 +172,7 @@ fun List<CustomModel>.asOfficialModels(): List<OfficialModel> = map { m ->
 
 /**
  * 模型目录合并:官方 + 自定义,按官方在前、自定义在后的顺序。
- * @param official 官方目录(网关实时或内置回退)
+ * @param official 官方目录(仅来自网关实时拉取;未配置网关时为空)
  */
 fun mergedModelList(official: List<OfficialModel>, customs: List<CustomModel>): List<OfficialModel> =
     official + customs.asOfficialModels()
-
-/** 兼容重载:使用内置官方目录。 */
-fun mergedModelList(customs: List<CustomModel>): List<OfficialModel> =
-    mergedModelList(builtinOfficialModels, customs)

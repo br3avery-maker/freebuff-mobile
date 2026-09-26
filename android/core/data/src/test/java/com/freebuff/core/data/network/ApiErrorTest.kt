@@ -2,6 +2,7 @@ package com.freebuff.core.data.network
 
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -43,6 +44,16 @@ class ApiErrorTest {
     }
 
     @Test
+    fun `明文 HTTP 被拦截归类 CleartextBlocked 并提示改用 https`() {
+        val raw = java.net.UnknownServiceException(
+            "CLEARTEXT communication to 10.0.2.2 not permitted by network security policy",
+        ).toApiError()
+        assertTrue(raw is ApiError.CleartextBlocked)
+        assertTrue(raw.userMessage.contains("https"))
+        assertFalse(raw.userMessage.contains("CLEARTEXT"))
+    }
+
+    @Test
     fun `已分类错误原样透传`() {
         val src = ApiError.NotConfigured("官方网关地址")
         val mapped = src.toApiError()
@@ -64,6 +75,23 @@ class ApiErrorTest {
         assertEquals("请求过于频繁(429):请稍后再试", httpErrorMessage(429))
         assertEquals("服务端错误(503):请稍后再试", httpErrorMessage(503))
         assertTrue(httpErrorMessage(418).contains("418"))
+    }
+
+    @Test
+    fun `更新源的 HTTP 码不报模型端点的说辞`() {
+        // 守卫目标:版本更新的 404 曾经直接复用对话文案,提示用户去检查 /chat/completions 路径
+        val msg = httpErrorMessage(404, HttpTarget.UpdateSource)
+        assertTrue(msg.contains("更新源"))
+        assertFalse(msg.contains("chat/completions"))
+        assertEquals(msg, ApiError.Http(404, "body", HttpTarget.UpdateSource).userMessage)
+        // 对话侧文案保持不变
+        assertEquals("端点不存在(404):请确认 /chat/completions 路径", httpErrorMessage(404))
+    }
+
+    @Test
+    fun `未配置文案在中英混排时补空格`() {
+        assertEquals("GitHub OAuth client_id 未配置", ApiError.NotConfigured("GitHub OAuth client_id").userMessage)
+        assertEquals("官方网关地址未配置", ApiError.NotConfigured("官方网关地址").userMessage)
     }
 
     @Test

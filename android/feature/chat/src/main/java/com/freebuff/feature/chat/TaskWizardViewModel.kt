@@ -46,7 +46,7 @@ class TaskWizardViewModel @Inject constructor(
     private val _draft = MutableStateFlow(TaskDraft())
     val draft: StateFlow<TaskDraft> = _draft.asStateFlow()
 
-    /** Git 账号仓库(真实 OAuth 查询;未配置时为演示回退)。 */
+    /** Git 账号仓库(GitHub OAuth 实时查询;未关联/未配置时为空并给出错误提示)。 */
     private val reposFlow = MutableStateFlow<List<RepoItem>>(emptyList())
     val repos: StateFlow<List<RepoItem>> = reposFlow.asStateFlow()
 
@@ -81,10 +81,11 @@ class TaskWizardViewModel @Inject constructor(
 
     /**
      * 当前对话模型(设置里 modelId 的即时值)。
-     * 向导草稿默认应以它为准,而不是 [TaskDraft] 里硬编码的默认模型。
+     * 向导草稿默认应以它为准;初值留空 —— [TaskDraft] 不再带演示模型,
+     * 未配置任何模型时向导就应显示「未选择」而不是一个并不存在的模型名。
      */
     val currentModelId: StateFlow<String> = settings.modelId
-        .stateIn(viewModelScope, SharingStarted.Eagerly, TaskDraft().modelId)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "")
 
     val modelList: StateFlow<List<OfficialModel>> = combine(catalog.official, customModels) { official, customs ->
         mergedModelList(official, customs)
@@ -159,8 +160,9 @@ class TaskWizardViewModel @Inject constructor(
         val ctxModel = modelList.value.firstOrNull { it.id == d.modelId }?.name ?: d.modelId
         viewModelScope.launch {
             try {
-                // 把向导所选模型写回设置,首条对话按此模型真实请求
-                settings.setModelId(d.modelId)
+                // 把向导所选模型写回设置,首条对话按此模型真实请求。
+                // 没有选过模型时不写:否则会把空/无效 id 盖掉设置里已选好的模型。
+                if (d.modelId.isNotBlank()) settings.setModelId(d.modelId)
                 val s = sessionRepo.create("新对话")
                 val desc = d.desc
                 // 重置草稿但保留刚用过的模型:下次开向导仍默认同一个模型

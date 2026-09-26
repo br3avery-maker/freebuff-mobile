@@ -1,6 +1,5 @@
 package com.freebuff.core.data.network
 
-import com.freebuff.core.model.OFFICIAL_MODELS
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
@@ -48,9 +47,9 @@ class FreebuffApiTest {
         val req = server.takeRequest()
         assertEquals("/v1/models", req.path)
         assertEquals(3, models.size)
-        // 已知 id 复用内置元数据,未知 id 自动生成
-        assertEquals(OFFICIAL_MODELS.first { it.id == "deepseek-v4-flash" }.name, models[0].name)
-        // 未知 id 自动美化:连字符转空格、单词首字母大写
+        // 网关就是唯一来源:展示名称按 id 自动美化(连字符转空格、缩写大写、首字母大写)
+        assertEquals("Deepseek V4 Flash", models[0].name)
+        assertEquals("GLM 5.3 Flash", models[1].name)
         assertEquals("Brand New Model", models[2].name)
         assertEquals("BRA", models[2].badge)
         assertEquals("brand-new-model", models[2].id)

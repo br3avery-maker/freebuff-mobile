@@ -320,7 +320,9 @@ private fun ModelPickList(f: FState, list: List<String>) {
                             f.invalidateTest()
                             f.pickList = null
                         }.padding(horizontal = 9.dp, vertical = 8.dp)) {
-                    Text(mid, color = if (cur) t.accentInk else t.text, fontSize = 11.sp,
+                    // 选中行底色是 accentSoft(浅色洗底),文字必须用 accent;
+                    // accentInk 是压 accent 实底用的,放在浅底上两种主题都看不见
+                    Text(mid, color = if (cur) t.accent else t.text, fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f))
                     if (cur) Text("已选", color = t.accent, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)

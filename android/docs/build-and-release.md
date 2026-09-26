@@ -4,26 +4,56 @@
 
 ## 0. 发版流程(自动化,推荐)
 
-推送 `v*` 标签即自动发版:[`.github/workflows/release.yml`](../.github/workflows/release.yml) 会跑单测、构建 release APK、校验「标签 = versionName」、创建 GitHub Release 并附上按版本命名的 APK。
+推送 `v*` 标签即自动发版:[`.github/workflows/release.yml`](../.github/workflows/release.yml) 会跑单测、构建 release APK、校验「标签 = versionName」、创建 GitHub Release 并附上按版本命名的 APK,最后把 `dist/update.json`(App 内「检查更新」的数据源)刷成本次版本并回推 `main`。
+
+**版本号唯一来源是 [`android/version.properties`](../version.properties)**:app 的 `versionName`/`versionCode` 与
+`core:model` 的 `LATEST_VERSION`(设置页与「检查更新」显示的基准)**都由它构建时生成** ——
+发版只需改这一个文件,标签必须与其中的 `versionName` 一致。
 
 ```bash
-# 1. 版本号提升(三处同步)并提交推送:
-#    android/app/build.gradle.kts  versionCode / versionName
-#    android/core/model/.../Models.kt  LATEST_VERSION(应用内「检查更新」的基准)
+# 1. 提升 android/version.properties 的 versionCode / versionName 并提交推送
 git push origin main
 # 2. 等 Android CI 全绿
 gh run watch   # 或看 Actions 页面
 # 3. 打标签推送 → 发版自动完成
-git tag -a v0.X.Y -m "v0.X.Y: 一句话说明" && git push origin v0.X.Y
+git tag -a v1.2.0 -m "v1.2.0: 一句话说明" && git push origin v1.2.0
 ```
 
 说明:
 
-- **版本一致性硬校验**:标签 `v0.X.Y` 与 `versionName` 不一致时工作流直接失败,不会发出版本号对不上的包。所以先推版本号提升、再打标签。
+- **版本一致性硬校验**:标签 `vX.Y.Z` 与 `versionName` 不一致时工作流直接失败,不会发出版本号对不上的包。所以先推版本号提升、再打标签。预发布标签(`v1.2.0-rc1`)取主版本部分比对。
+- **更新源自动同步**:发版后 `dist/update.json` 被重写为
+  `{"version":"<标签版本>","url":".../releases/latest","notes":["<上一个标签到本标签的提交标题>"]}`
+  并提交回 `main` —— 默认 `UPDATE_URL` 直链这个文件,所以「发布的版本号」与「App 检查更新看到的版本」不会再漂移。
+  回推三次都失败、或线上校验读到的版本与标签不一致时,本次发版会被判失败(更新通道不能静默停在旧版本)。
 - **Release 说明自动生成**:取上一个标签到本标签之间的提交标题(`- 标题 (短哈希)` 逐条列出);首个标签没有可比对的上一个标签时写「首个自动发版」。发布后可在 Releases 页面编辑润色。
 - **产物命名**:`FreebuffMobile-<版本>-release.apk`(与第 3 节的 `dist/` 约定一致)。
 - **重复标签保护**:同一标签推送两次,第二次在创建 Release 时报「已存在」而失败,属预期保护;要重发需先删标签与 Release。
 - 该工作流不跑 lint(与 CI 分工:CI 管 PR/分支质量门禁,Release 管出包),签名规则见第 4 节 —— 未配置 `keystore.properties`(CI 上即 Secrets 未注入)时出 debug 证书签名的包。
+
+### 0.1 更新源与版本清单(手动排查用)
+
+清单格式(`core/data` 的 `UpdateRepository` 解析 `version` / `notes[]` / `url`):
+
+```json
+{ "version": "1.2.0", "url": "https://github.com/doubao01/freebuff-mobile/releases/latest", "notes": ["..."] }
+```
+
+- **默认地址**:`https://raw.githubusercontent.com/doubao01/freebuff-mobile/main/dist/update.json`
+  (仓库公开,匿名可读;App 只发一次 GET,无任何密钥)。
+- **换源**:在 `android/local.properties` 写 `freebuff.updateUrl=…`,或打包时设环境变量 `FREEBUFF_UPDATE_URL=…`
+  (二者都注入 `BuildConfig.UPDATE_URL`)。
+- **地址必须是 https**:targetSdk 28+ 的 Android 默认禁止明文 HTTP,`http://` 更新源会被系统拦住,
+  App 侧显示「地址不被允许:Android 默认禁止明文 HTTP,请把该地址换成 https」。
+- **本地生成 / 校验**(与 CI、发版工作流同一份脚本):
+
+```bash
+python3 scripts/update-manifest.py 1.2.0 --prev v1.1.0   # 生成(不给 --prev 就取最近提交)
+python3 scripts/update-manifest.py --check               # CI 同款校验
+```
+
+- **不要手工把清单版本改得比 `version.properties` 更高**:那会让所有用户看到「有新版本」却永远装不上,
+  CI 会直接拦下;补发旧标签时脚本也会拒绝把清单降级。
 
 ## 1. 工具链
 
@@ -93,11 +123,12 @@ scripts/gradle.sh :app:assembleRelease --console=plain > rel-log.txt 2>&1
 
 ```bash
 mkdir -p dist
-cp app/build/outputs/apk/debug/app-debug.apk   dist/FreebuffMobile-0.0.1-debug.apk
-cp app/build/outputs/apk/release/app-release.apk dist/FreebuffMobile-0.0.1-release.apk
+cp app/build/outputs/apk/debug/app-debug.apk   dist/FreebuffMobile-<版本>-debug.apk
+cp app/build/outputs/apk/release/app-release.apk dist/FreebuffMobile-<版本>-release.apk
 ```
 
-`dist/` 中的文件名带版本号 —— 发布新版本时记得跟着 `versionName` 一起改。
+`<版本>` 取 `android/version.properties` 的 `versionName`;`android/dist/` 已在 `.gitignore` 中,与仓库根目录
+`dist/update.json`(入库的更新清单)不是一回事。
 
 ## 4. 签名:两种模式自动切换
 
@@ -157,14 +188,15 @@ scripts/gradle.sh :app:signingReport
 
 ```bash
 # 安装到已连接的设备/模拟器
-.toolchain/sdk/platform-tools/adb.exe install -r dist/FreebuffMobile-0.0.1-release.apk
+.toolchain/sdk/platform-tools/adb.exe install -r dist/FreebuffMobile-<版本>-release.apk
 
 # 校验签名与包信息
 .toolchain/sdk/build-tools/35.0.0/apksigner.bat verify -v app/build/outputs/apk/release/app-release.apk
 .toolchain/sdk/build-tools/35.0.0/aapt2.exe dump badging app/build/outputs/apk/release/app-release.apk
 ```
 
-预期包信息:`package name='com.freebuff.mobile' versionCode='1' versionName='0.0.1'`,minSdk 26 / targetSdk 35。
+预期包信息:`package name='com.freebuff.mobile'`,且 `versionCode`/`versionName` 与 `version.properties` 一致
+(当前 `2` / `1.0.0`),minSdk 26 / targetSdk 35。
 
 ## 6. R8 混淆注意事项
 
@@ -183,4 +215,7 @@ scripts/gradle.sh :app:signingReport
 | 想确认 release 到底用了哪个证书 | 跑 `:app:signingReport`,看 `Variant: release` 的 `Config:` / `Store:` 两行 |
 | 依赖下载长时间无进展 | 直连 Maven 仓库被阻塞。确认 `settings.gradle.kts` 使用的是阿里云镜像 |
 | release 包安装后崩溃、debug 正常 | R8 裁掉了反射所需成员。按第 6 节补充 keep 规则 |
+| App 里「检查更新」总是失败 | 默认更新源是 GitHub raw 直链(国内网络可能不可达)。确认网络可访问 `raw.githubusercontent.com`,或把 `freebuff.updateUrl` 指向自建更新源 |
+| 发版后 App 仍显示「已是最新」 | 看 release 工作流末尾「Verify published update source」是否失败(清单未回推到 main);重跑该工作流即可 |
+| 想改更新源地址 | 优先用 `freebuff.updateUrl` / `FREEBUFF_UPDATE_URL`(不必改代码);只有默认值要变时才改 `app/build.gradle.kts` 里的 `updateUrl` 常量 |
 | `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | 设备上已装同包名但签名不同的应用,先卸载旧包 |

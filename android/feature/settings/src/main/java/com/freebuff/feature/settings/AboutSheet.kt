@@ -16,8 +16,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -32,7 +30,7 @@ import com.freebuff.core.ui.navigation.LocalAppNavigator
 import com.freebuff.core.ui.theme.LocalTokens
 
 /**
- * 关于 Freebuff Mobile:来源说明 + 后续计划。
+ * 关于 Freebuff Mobile:能力说明 + 后续计划。
  * 文案按原生工程的实际接入状态描述(对话走真实网络、密钥加密落库),
  * 不再沿用 HTML 原型「所有回复均为预置模拟」的措辞。
  */
@@ -40,7 +38,8 @@ import com.freebuff.core.ui.theme.LocalTokens
 fun AboutSheet(viewModel: SettingsViewModel = hiltViewModel()) {
     val t = LocalTokens.current
     val navigator = LocalAppNavigator.current
-    val version by viewModel.version.collectAsState()
+    // 版本显示用实际安装的包版本(BuildConfig.VERSION_NAME),不再落库、不可被写脏
+    val version = viewModel.appVersion
     SheetScaffold("关于 Freebuff Mobile", "Freebuff Mobile · v" + version) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
             Row(verticalAlignment = Alignment.CenterVertically,
@@ -74,12 +73,12 @@ fun AboutSheet(viewModel: SettingsViewModel = hiltViewModel()) {
 }
 
 private const val ABOUT_BODY =
-    "按 freebuff-android-prototype 的 HTML 概念原型一比一实现的官方安卓 App。\n" +
+    "Freebuff 官方安卓客户端:与自主编码 Agent 对话,把想法直接落到代码与任务上。\n" +
         "对话走真实网络:官方模型经 Freebuff 网关,自定义模型直连你填写的 OpenAI 兼容端点;" +
         "Git 账号通过 GitHub OAuth 设备流授权,可直接读取你的仓库列表。\n" +
         "会话、设置与自定义模型保存在本机数据库;API Key 与 Git token 经 Android Keystore 加密后落库。"
 
 private const val ABOUT_PLAN =
-    "1) 填入官方网关与更新源的正式地址,替换当前的演示回退数据;\n" +
-        "2) 用正式证书签名并做上架准备,补齐应用图标与启动图资源;\n" +
-        "3) 接入真正的应用内更新流程(下载、校验、安装)。"
+    "1) 接入真正的应用内更新流程(下载、校验、安装);\n" +
+        "2) 支持更多 Git 服务商,并扩展到提交 / 开 PR;\n" +
+        "3) 子代理编排(多路并行探索与并行改码)。"
