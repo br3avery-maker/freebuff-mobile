@@ -646,8 +646,9 @@ class ChatViewModel @Inject constructor(
 
     /**
      * 工具名 → 本轮会话内连续失败次数。
-     * 用途只有一个:同一工具第 2 次失败时,错误信封从「按建议重试」升级为「换路或告知用户」——
-     * 弱模型很容易拿着同一个错参数反复撞(业界共识是有界自纠:重试一两次就应该换策略)。
+     * 用途有两个:第 2 次失败时错误信封从「按建议重试」升级为「换路或告知用户」;
+     * 第 3 次失败起端上直接拒绝执行(熔断,见 dispatchTool)——劝过还重发就别再让它跑。
+     * 每次对话操作开始时 clear():失败/熔断都不跨消息,下一条新消息工具自动恢复(half-open)。
      */
     private val toolFailStreak = HashMap<String, Int>()
 
@@ -704,6 +705,18 @@ class ChatViewModel @Inject constructor(
         val attempt = (toolFailStreak[c.name] ?: 0) + 1
         // 当前会话真正可用的工具集:关掉记忆能力时不含记忆工具,未知名字的建议据此生成
         val available = activeTools()
+        // 熔断:劝过换路(第 2 次失败)之后模型还重发,从第 3 次起端上直接拒绝执行 ——
+        // 把「换路」从建议变成事实,别让循环把轮次耗在同一个工具上。收工类工具(end_turn/task_completed)
+        // 豁免:它们是循环唯一的出口,熔断它们反而会锁死整个循环。失败计数在每次对话操作开始时清零,
+        // 所以下一条新消息就能恢复(断路器 half-open 语义)。
+        if (attempt >= com.freebuff.core.model.ToolErrors.BREAK_AT &&
+            c.name !in com.freebuff.core.model.AgentLoop.END_TOOLS
+        ) {
+            return com.freebuff.core.model.ToolOutcome(
+                com.freebuff.core.model.ToolErrors.breakerOpen(c.name, com.freebuff.core.model.DefaultTools.names(available), attempt),
+                isError = true,
+            )
+        }
         // 占位分派(P0 协议层已注册工具,执行引擎未上线):不执行、不弹权限确认,
         // 直接回填说明文本让模型自行完成子任务;同时预热模型的调用形态,P1 上线后无缝切换
         if (c.name == Subagent.TOOL_NAME) {

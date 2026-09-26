@@ -44,6 +44,29 @@ class ToolExecutorsTest {
     }
 
     @Test
+    fun `同一次调用的多个参数问题合并进一张信封`() = runBlocking {
+        // 一次带三个错:自造 mode + 缺 query + limit 越界 —— 一张信封逐条编号全讲完,
+        // 弱模型不用再「改一个错、重发、再撞下一个」地耗轮次
+        val r = ex.execute(
+            ToolCallReq(
+                "c11", "github_search_repositories",
+                """{"mode":"fast","limit":99}""",
+            ),
+        )
+        assertTrue(r.isError)
+        assertTrue("实际信封: ${r.content}", r.content.startsWith(ToolErrors.MARK))
+        assertTrue("实际信封: ${r.content}", env_count(r.content) >= 3)
+        assertTrue("实际信封: ${r.content}", r.content.contains("① 参数名 mode 不存在"))
+        assertTrue("实际信封: ${r.content}", r.content.contains("② 必填参数 query"))
+        assertTrue("实际信封: ${r.content}", r.content.contains("③ 参数 limit 的取值"))
+        assertTrue("每条都要有改法: ${r.content}", r.content.contains("③ limit 取值需在 1~10"))
+    }
+
+    /** 数信封里的编号条数(①②③…)。 */
+    private fun env_count(s: String): Int = listOf("①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨")
+        .count { s.contains(it) }
+
+    @Test
     fun `参数名写错能靠别名救回 自造参数会被挡下`() = runBlocking {
         // 弱模型常见错法:把 path 写成 file —— 别名归一后照常执行
         val ok = ex.execute(

@@ -20,6 +20,9 @@ package com.freebuff.core.model
  * ```
  * 同一工具连续失败时追加一句「别重复同样的调用」——这是有界自纠(重试一次就换路),
  * 避免弱模型把循环耗在同一个错误上。
+ *
+ * 熔断:劝过之后(第 [ESCALATE_AT] 次失败起)模型仍重发,从第 [BREAK_AT] 次起端上**直接拒绝执行**
+ * ([breakerOpen]),把「换路」从建议升级为事实 —— 否则劝换路的文案本身也会被无视,循环照样耗下去。
  */
 object ToolErrors {
 
@@ -28,6 +31,9 @@ object ToolErrors {
 
     /** 同一工具连续失败到第几次开始劝「换路」。第一次失败仍鼓励按建议重试一次。 */
     const val ESCALATE_AT = 2
+
+    /** 同一工具连续失败到第几次起端上直接拒绝执行(熔断)。必须大于 [ESCALATE_AT],否则没有「劝」的阶段。 */
+    const val BREAK_AT = 3
 
     private const val MAX_PROBLEM = 200
     private const val MAX_FIX = 260
@@ -45,6 +51,7 @@ object ToolErrors {
         UNKNOWN_PARAM("UNKNOWN_PARAM", "参数名不存在", true),
         BAD_VALUE("BAD_VALUE", "参数取值不合法", true),
         UNKNOWN_TOOL("UNKNOWN_TOOL", "工具不存在", false),
+        CIRCUIT_OPEN("CIRCUIT_OPEN", "工具已被端上暂停", false),
         NOT_FOUND("NOT_FOUND", "没找到对应资源", true),
         AUTH("AUTH", "鉴权或权限不足", false),
         RATE_LIMIT("RATE_LIMIT", "请求过于频繁", true),
@@ -106,6 +113,23 @@ object ToolErrors {
         "注意:该工具已连续失败两次,不要再发同样的调用 —— 换参数、换工具,或直接告诉用户卡在哪里。"
 
     /**
+     * 熔断:同一工具在本轮对话里连败到 [BREAK_AT] 次后,端上不再执行它,直接回这张信封。
+     * 为什么要有:连败两次的「劝换路」对弱模型不够 —— 它还会重发;熔断把浪费变成一次明确的拒绝,
+     * 模型只能换参数/换工具/收工。本轮对话结束后随失败计数一起清零(参考断路器的 half-open)。
+     */
+    fun breakerOpen(tool: String, known: List<String>, attempt: Int): String {
+        val others = known.filter { it != tool }
+        return report(
+            Kind.CIRCUIT_OPEN, tool,
+            "该工具本轮已连续失败 " + attempt + " 次,端上已暂停执行,这次调用没有运行",
+            "不要再调用 " + tool + ":换其它工具" +
+                (if (others.isNotEmpty()) "(可用: " + others.take(4).joinToString("、") + "…)" else "") +
+                ",或直接告诉用户这一步卡在哪里;下一条新消息会恢复该工具",
+            attempt,
+        )
+    }
+
+    /**
      * 给已有的错误信封补上「连续失败」升级语。
      *
      * 为什么要这个兜底:错误分支很多(未知工具/参数体检/HTTP/内部异常/记忆类工具…),
@@ -115,31 +139,55 @@ object ToolErrors {
     fun escalateIfNeeded(content: String, attempt: Int): String =
         if (attempt < ESCALATE_AT || content.contains(ESCALATE)) content else content + "\n" + ESCALATE
 
+    /** 单条参数问题的「怎么改」处方(合并信封与单条信封共用)。 */
+    private fun argFix(p: ArgProblem): String = when (p) {
+        is ArgProblem.Missing -> "补上 " + p.name + " 后重试一次。"
+        is ArgProblem.Unknown -> "删掉未声明的参数「" + p.name + "」,只用声明过的参数。"
+        is ArgProblem.Enum -> p.name + " 只能取 " + p.allowed.joinToString(" / ") + "。"
+        is ArgProblem.Range -> p.name + " 取值需在 " + (p.min?.toString() ?: "不限") + "~" + (p.max?.toString() ?: "不限") + " 之内。"
+        is ArgProblem.Type -> p.name + " 要传 " + p.expected + "。"
+    }
+
+    /** 单条参数问题对应的错误分类(取最严重的一类:缺参 > 参数名不存在 > 取值不合法)。 */
+    private fun argKind(p: ArgProblem): Kind = when (p) {
+        is ArgProblem.Missing -> Kind.MISSING_PARAM
+        is ArgProblem.Unknown -> Kind.UNKNOWN_PARAM
+        is ArgProblem.Enum -> Kind.BAD_VALUE
+        is ArgProblem.Range -> Kind.BAD_VALUE
+        is ArgProblem.Type -> Kind.BAD_VALUE
+    }
+
     /**
-     * 参数校验结果 → 信封。只讲第一条问题(讲太多弱模型会抓不住),但把合法参数名与示例都给出来,
-     * 让它下一次能一次改对。
+     * 参数校验结果 → 信封。
+     *
+     * 一条问题:固定形状,「问题/怎么改」各一行(与旧版完全一致,测试与 mock 都认这个形状)。
+     * 多条问题:**合并成一张信封**,问题与处方逐条编号列出(①②③),末尾附一份参数清单 ——
+     * 一次只讲第一条会浪费轮次:弱模型改完第一个错,下一个请求还会撞上第二个错。
+     * 两种形态都把合法参数名与示例带全,让它下一次能一次改对。
      */
     fun forProblems(tool: AgentTool, problems: List<ArgProblem>, attempt: Int = 1): String {
-        val first = problems.firstOrNull() ?: return ""
-        val kind = when (first) {
-            is ArgProblem.Missing -> Kind.MISSING_PARAM
-            is ArgProblem.Unknown -> Kind.UNKNOWN_PARAM
-            is ArgProblem.Enum -> Kind.BAD_VALUE
-            is ArgProblem.Range -> Kind.BAD_VALUE
-            is ArgProblem.Type -> Kind.BAD_VALUE
+        if (problems.isEmpty()) return ""
+        if (problems.size == 1) {
+            val p = problems.first()
+            val fix = argFix(p) + "参数清单: " + warnParams(tool)
+            return report(argKind(p), tool.name, p.describe(), fix, attempt, tool.example)
         }
-        val fix = buildString {
-            when (first) {
-                is ArgProblem.Missing -> append("补上 ").append(first.name).append(" 后重试一次。")
-                is ArgProblem.Unknown -> append("只用 ").append(tool.name).append(" 声明过的参数,重发一次。")
-                is ArgProblem.Enum -> append(first.name).append(" 只能取 ").append(first.allowed.joinToString(" / ")).append("。")
-                is ArgProblem.Range -> append(first.name).append(" 取值需在 ")
-                    .append(first.min?.toString() ?: "不限").append("~").append(first.max?.toString() ?: "不限").append(" 之内。")
-                is ArgProblem.Type -> append(first.name).append(" 要传 ").append(first.expected).append("。")
-            }
-            append("参数清单: ").append(warnParams(tool))
-        }
-        return report(kind, tool.name, first.describe(), fix, attempt, tool.example)
+        val problem = problems.mapIndexed { i, p -> numbered(i) + " " + p.describe() }.joinToString(" ")
+        val fix = problems.mapIndexed { i, p -> numbered(i) + " " + argFix(p) }.joinToString(" ") +
+            "参数清单: " + warnParams(tool)
+        val kind = problems.maxByOrNull { argSeverity(it) }?.let(::argKind) ?: Kind.BAD_VALUE
+        return report(kind, tool.name, problem, fix, attempt, tool.example)
+    }
+
+    /** 信封内多条问题的编号(①②③…),超出 9 条兜底成普通数字。 */
+    private fun numbered(index: Int): String = "①②③④⑤⑥⑦⑧⑨".drop(index).take(1)
+        .ifEmpty { (index + 1).toString() + "." }
+
+    /** 排序用:问题严重度(缺参最致命,类型不合法次之)。 */
+    private fun argSeverity(p: ArgProblem): Int = when (p) {
+        is ArgProblem.Missing -> 3
+        is ArgProblem.Unknown -> 2
+        else -> 1
     }
 
     /** 工具不存在:给近邻建议 + 完整清单,让模型立刻改对而不是继续编。 */

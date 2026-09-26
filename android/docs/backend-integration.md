@@ -118,7 +118,7 @@ sealed interface ApiResult<out T> {
 `verify/mock_variants.py` 是按「最后一条 user 消息里的 `case xxx`」切场景的变体 mock,覆盖上表每一项并在
 服务端打印 `PASS/FAIL`;设备端用 `verify/send_case.py <case>` 发一条消息后 grep 日志即可回归。
 
-成规模的回归用「场景矩阵」:`verify/mock_matrix.py` 在 `127.0.0.1:8899` 起 mock(按 `case xxx` 切 23 个场景),
+成规模的回归用「场景矩阵」:`verify/mock_matrix.py` 在 `127.0.0.1:8899` 起 mock(按 `case xxx` 切 26 个场景),
 `verify/matrix.py` 逐场景在真机上跑完一轮并把断言写进 `verify/matrix_report.md`;个别场景需要看库才能判定
 (如「工具后只回文本要被提醒续跑」),用 `verify/recheck.py <case> <期望文本>` 盯库复验,不依赖界面空闲。
 长会话回归见 `verify/longsession.py`(结果见 `docs/context-engineering.md` §5)。
@@ -161,7 +161,8 @@ sealed interface ApiResult<out T> {
    说明书与 schema **每轮都随请求注入**,不靠模型记。
 2. **参数体检**(`DefaultTools.validate` / `prepare`):未知参数名、缺必填、类型不对、越界、取值不在闭集 ——
    在**执行前**拦住并归一(字符串数字 `"7"` 当整数收,`"User"` 对齐成 `user`);体检先说「参数名写错」
-   再说「缺什么」,弱模型一次只改得动一件事。
+   再说「缺什么」。一次调用查出多条问题时**合并进一张信封**:问题与处方逐条编号(①②③)全讲完 ——
+   只讲第一条会浪费轮次,弱模型改完第一个错,下一个请求还会撞上第二个错。
 3. **错误信封**(`core:model/ToolErrors.kt`),固定形状,模型可学、测试可断:
 
 ```
@@ -171,11 +172,25 @@ sealed interface ApiResult<out T> {
 正确调用示例: github_get_file({"owner": "CodebuffAI", "repo": "freebuff", "path": "README.md"})
 ```
 
+多条问题合并成一张信封的形状(单条问题时保持上面的原样,不编号):
+
+```
+[工具错误] 类型=缺少必填参数/MISSING_PARAM · 工具=github_search_repositories
+问题: ① 参数名 mode 不存在(可能你想用的是别的名字) ② 必填参数 query 没有给 ③ 参数 limit 的取值「99」超出范围
+怎么改: ① 删掉未声明的参数「mode」,只用声明过的参数。 ② 补上 query 后重试一次。 ③ limit 取值需在 1~10 之内。参数清单: …
+```
+
 分类(`Kind`)覆盖:参数不合法 / 缺参数 / 参数名不存在 / 取值非法 / 工具不存在 / 资源没找到 / 鉴权 / 限流 /
-网络 / 用户不允许 / 重复调用 / 内部错误。HTTP 状态码分开给下一步:401·403 别重试、404 先核对名字(工具特有
-提示如「先用 `github_search_repositories` 搜仓库名」)、429 等一会儿且**别连续重试**、5xx 可重试一次。
+网络 / 用户不允许 / 重复调用 / 内部错误 / **工具已被端上暂停(CIRCUIT_OPEN)**。HTTP 状态码分开给下一步:
+401·403 别重试、404 先核对名字(工具特有提示如「先用 `github_search_repositories` 搜仓库名」)、
+429 等一会儿且**别连续重试**、5xx 可重试一次。
 同一工具**连续失败第 2 次**起自动追加「不要再发同样的调用 —— 换参数、换工具,或直接告诉用户卡在哪里」
 (`ToolErrors.escalateIfNeeded`,执行器统一兜底,保证这条不变式不靠每个分支自觉)。
+**第 3 次失败起端上直接熔断**(`ToolErrors.BREAK_AT`,`ChatViewModel.dispatchTool` 闸门):这次调用**不执行**,
+直接回 `CIRCUIT_OPEN` 信封 —— 列出可用的替代工具、说明「下一条新消息会恢复」。收工类工具(end_turn/
+task_completed)豁免:它们是循环唯一的出口,熔断它们反而会锁死循环。失败计数每条消息开始时清零
+(断路器 half-open:失败/熔断都不跨消息,新消息自动恢复)。为什么要有:实测「劝换路」对弱模型不够,
+它还会重发同一调用 —— 把浪费变成一次明确的拒绝,模型只能真的换路。
 完全重复的调用(结果被复用没重跑)也带一句「不要重发」——实测模型重放同一组工具是主要循环来源之一。
 
 **怎么让弱模型学会**:`ContextBuilder` 在附带工具定义的轮次里注入一段「工具使用约定」(不带工具时不注入,
@@ -183,9 +198,10 @@ sealed interface ApiResult<out T> {
 同一工具连续出错两次就换工具或直接说明、工具名只能用清单里的。
 三者配合的效果:报错→改对→跑通,而不是报错→重发→再报错。
 
-回归位置:`ToolErrorsTest`(信封形状/升级/近邻建议/HTTP 处方)、`ToolsTest`(说明书有示例且用真名字、
-闭集与上下界进 schema、体积预算、别名/类型/越界/枚举体检)、`ToolExecutorsTest`(别名救回、自造参数被拦、
-连续失败升级)、`ContextBuilderTest`(工具使用时注入约定、不带工具时不注入)。
+回归位置:`ToolErrorsTest`(信封形状/单条与合并处方/升级/熔断信封/近邻建议/HTTP 处方)、`ToolsTest`
+(说明书有示例且用真名字、闭集与上下界进 schema、体积预算、别名/类型/越界/枚举体检)、`ToolExecutorsTest`
+(别名救回、自造参数被拦、多问题合并进一张信封、连续失败升级)、`ContextBuilderTest`(工具使用时注入约定、
+不带工具时不注入)。
 
 真机实测(2026-09-26,`case argerr`):模型带一个自造参数 `mode` 调 `calculator` → 端上回信封
 `[工具错误] 类型=参数名不存在/UNKNOWN_PARAM · 工具=calculator / 问题: 参数名 mode 不存在…` →
@@ -195,9 +211,9 @@ mock 断言「信封有处方」PASS → 改对的调用算出 `6*7 = 42` →「
 注意:加字段只加 JSON Schema 的常规关键字(enum/minimum/maximum/default),**不开 `strict` 模式** ——
 严格端点对未知模式标志会 400;实测真实网关(OpenAI 兼容)接受这套 schema 并正确调工具。
 
-#### 3.3.6 场景矩阵回归结果(真机 23 场景)
+#### 3.3.6 场景矩阵回归结果(真机 26 场景)
 
-`verify/mock_matrix.py` + `verify/matrix.py` 的 23 个场景(以 `verify/matrix.py` 的 `CASES` 为准):
+`verify/mock_matrix.py` + `verify/matrix.py` 的 26 个场景(以 `verify/matrix.py` 的 `CASES` 为准):
 `emptyargs` 无参工具仍要执行 / `parallel` 一次两个无 index 调用按 id 分槽 / `multiline` 事件跨两条 data 行 /
 `badargs` 参数栅栏·单引号·尾逗号修复后执行 / `errframe` HTTP 200 里夹错误帧 / `legacy` 遗留 `function_call` +
 末尾无空行 / `thinking` Anthropic 思考参数规则 / `single` 一次工具 + 正文 + 显式收工 / `progress` 只回文本的
@@ -206,7 +222,20 @@ mock 断言「信封有处方」PASS → 改对的调用算出 `6*7 = 42` →「
 `http401` 不可重试直接报错 / `trunc` 流被截断不能卡死 / `empty` 空回复端上给提示 / `memsave` 核心记忆落库 /
 `reason` `reasoning_content` 落库并折叠展示 / `longtext` 长正文全文到达 / `thinkreject` 端点拒思考参数后去字段重发 /
 `notools` 端点拒 tools 后去字段重发并提示(必须放最后:本会话后续请求都不再带工具)/
-`argerr` 自造参数名 → 错误信封给处方,按建议改对后自愈。
+`argerr` 自造参数名 → 错误信封给处方,按建议改对后自愈 /
+`killstart` 流开零字节被杀 → 正文修成「(上次生成被中断,可重新发送)」/ `killmid` 半途正文被杀 →
+正文保留、过程性步骤清干净 / `killtool` 确认弹窗等待时被杀 → waiting 卡片标未完成。
+
+kill 三连单独成组(`python verify/matrix.py killstart killmid killtool`),断言四段:中断半成品形态 →
+冷启动自动修复 → 幂等(再冷启动一次形态逐字不变)→ 进会话看界面无陈旧步骤。制造中断:killstart/killmid 用
+mock 的 chunked **永不结束流**(收下请求只写分块、不发终止块)+ `am force-stop`;killtool 用确认级工具
+`save_memory` —— 权限层把卡片写成 `waiting` 并弹「工具执行确认」,端上就停在这一步等用户点,此时杀进程,
+半成品形态完全确定、不依赖任何网络时序。两个实测发现,后来都成了场景设计的一部分:工具卡片只在**流结束时**
+由 `AgentEventParser.flush()` 落库,永不结束的流永远产生不了 running 卡片(「工具执行中被杀」那条路走不通,
+第一版用 `web_fetch` 挂 `/hang` 就是这样失败的);mock 的 `rounds` 按 case 全局计数,kill 类剧本必须**每轮同款**
+(不看 rnd),否则第二次一键重跑时新会话拿到 rnd>1、只剩收尾剧本,waiting 卡片再也造不出来。
+证据:killstart/killmid/killtool 连续两轮 3/3 PASS(`verify/matrix_report.md`),修复形如
+正文保留 + 卡片 `[save_memory, error, (未完成)]` + 步骤清空,冷启动日志 `FreebuffStartup: repaired 1 interrupted message(s)`。
 
 - 全量:20/22 直接 PASS;两个 FAIL 经定位都不是产品缺陷 —— `thinking` 当时设备模型是 `grok-4.7`(断言只对
   claude/glm 族生效),`progress` 是矩阵把多轮的中间态误判为结束。

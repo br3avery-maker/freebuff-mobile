@@ -76,19 +76,43 @@ class ToolErrorsTest {
     }
 
     @Test
-    fun `参数问题只讲第一条 但给全参数清单与示例`() {
+    fun `单条参数问题保持固定形状 但给全参数清单与示例`() {
         val tool = DefaultTools.find("github_get_file")!!
         val env = ToolErrors.forProblems(
             tool,
             listOf(
                 ToolErrors.ArgProblem.Missing("path"),
                 ToolErrors.ArgProblem.Range("limit", "99", 1, 10),
-            ),
+            ).take(1),
         )
         assertTrue(env.contains("缺少必填参数"))
         assertTrue("一次只讲一件事", !env.contains("超出范围"))
         assertTrue("要给参数名 + 类型清单", env.contains("owner:string"))
         assertTrue("要给可照抄的示例", env.contains(tool.example))
+    }
+
+    @Test
+    fun `多个参数问题合并进一张信封 逐条编号给处方`() {
+        val tool = DefaultTools.find("github_get_file")!!
+        val env = ToolErrors.forProblems(
+            tool,
+            listOf(
+                ToolErrors.ArgProblem.Missing("path"),
+                ToolErrors.ArgProblem.Unknown("mode"),
+                ToolErrors.ArgProblem.Range("limit", "99", null, 20),
+            ),
+        )
+        assertTrue("仍然是一条错误结果", env.startsWith(ToolErrors.MARK))
+        assertTrue("问题要逐条编号", env.contains("① 必填参数 path"))
+        assertTrue(env.contains("② 参数名 mode 不存在"))
+        assertTrue(env.contains("③ 参数 limit 的取值"))
+        assertTrue("每条问题都要有对应的改法", env.contains("① 补上 path"))
+        assertTrue(env.contains("② 删掉未声明的参数「mode」"))
+        assertTrue(env.contains("③ limit 取值需在"))
+        assertTrue("末尾仍要附参数清单", env.contains("owner:string"))
+        assertTrue("示例仍要给", env.contains(tool.example))
+        assertTrue("类型取最严重的一类", env.contains("MISSING_PARAM"))
+        assertTrue("合并也不破坏固定行形状", env.lines().let { l -> l.size <= 4 && l[0].startsWith(ToolErrors.MARK) })
     }
 
     @Test
@@ -105,6 +129,20 @@ class ToolErrorsTest {
         assertEquals("信封只有固定的几行", 3, env.lines().size)
         val problemLine = env.substringAfter("问题: ").substringBefore('\n')
         assertTrue("问题行要截断: ${problemLine.length}", problemLine.length <= 220)
+    }
+
+    @Test
+    fun `熔断信封直接拒绝并列出可用的替代工具`() {
+        val env = ToolErrors.breakerOpen(
+            "web_fetch",
+            listOf("web_search", "web_fetch", "calculator", "current_time", "task_completed"),
+            attempt = 3,
+        )
+        assertTrue(env.startsWith(ToolErrors.MARK))
+        assertTrue(env.contains("CIRCUIT_OPEN"))
+        assertTrue("要说清这次没执行", env.contains("这次调用没有运行"))
+        assertTrue("要说清怎么恢复", env.contains("下一条新消息会恢复"))
+        assertTrue("要列出替代工具且不含被熔断的它", env.contains("web_search") && !env.contains("可用: web_search、web_fetch"))
     }
 
     @Test
