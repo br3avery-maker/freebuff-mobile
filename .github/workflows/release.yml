@@ -265,8 +265,12 @@ jobs:
         run: |
           cd "${GITHUB_WORKSPACE}"
           PREV=$(git describe --tags --abbrev=0 "${REF}^" 2>/dev/null || true)
-          python3 scripts/update-manifest.py "$VERSION_BASE" --prev "$PREV" --ref "$REF"
-          python3 scripts/update-manifest.py --check
+          # 清单是生成物:重建 + 自洽校验捆成一件事,重试时重复调用即可(幂等)
+          regen() {
+            python3 scripts/update-manifest.py "$VERSION_BASE" --prev "$PREV" --ref "$REF"
+            python3 scripts/update-manifest.py --check
+          }
+          regen
           if git diff --quiet -- dist/update.json; then
             echo "dist/update.json 无变化,跳过回推"
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -282,14 +286,30 @@ jobs:
             # 写成 HEAD:dryrun/update-manifest 时 git 无法判定是分支还是标签,直接拒绝推送。
             if git push origin "HEAD:refs/heads/${DEST}"; then pushed=1; break; fi
             echo "push 失败,第 $i 次重拉重试…"
-            git fetch origin "$DEST"
-            git rebase "origin/$DEST" || git rebase --abort
+            # 被抢先时**不能 rebase**:两个「重写 dist/update.json」的提交合并必然冲突(CI 干跑实测),
+            # 而且清单的正确内容本来就只由「标签 + 提交历史」决定。所以丢弃本地提交,以远端最新为基
+            # 重新生成一次:幂等,且不会把别人的提交拆掉。
+            git fetch origin "refs/heads/${DEST}:refs/remotes/origin/${DEST}" || git fetch origin "$DEST"
+            if ! git rev-parse --verify "refs/remotes/origin/${DEST}" >/dev/null 2>&1; then
+              echo "远端还没有 ${DEST},下次重试直接重推"
+              continue
+            fi
+            git reset --hard "origin/${DEST}"
+            regen
+            if git diff --quiet -- dist/update.json; then
+              echo "远端清单已是要发布的内容,无需再提交"
+              pushed=1
+              break
+            fi
+            git add dist/update.json
+            git commit -m "发版 ${REF}:刷新检查更新数据源 [skip ci]"
           done
           if [ "$pushed" != "1" ]; then
             echo "::error::dist/update.json 回推 ${DEST} 失败 —— 请在 Actions 里重跑本工作流"
             exit 1
           fi
           echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "回推完成:${DEST}"
 
       # 自证更新通道:回推后从 GitHub API 确认线上清单就是本次版本(权威,非 CDN),
       # 再轮询 raw 直链(用户 App 实际请求的地址)记录 CDN 是否已跟上。
