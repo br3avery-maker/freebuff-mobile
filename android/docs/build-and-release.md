@@ -28,10 +28,48 @@ git tag -a v1.2.0 -m "v1.2.0: 一句话说明" && git push origin v1.2.0
   回推三次都失败、或线上校验读到的版本与标签不一致时,本次发版会被判失败(更新通道不能静默停在旧版本)。
 - **Release 说明自动生成**:取上一个标签到本标签之间的提交标题(`- 标题 (短哈希)` 逐条列出);首个标签没有可比对的上一个标签时写「首个自动发版」。发布后可在 Releases 页面编辑润色。
 - **产物命名**:`FreebuffMobile-<版本>-release.apk`(与第 3 节的 `dist/` 约定一致)。
+- **包自证**:发版前会验产物的签名证书与包内 `versionName`/`versionCode`(与 `version.properties` 必须一致,不一致直接失败);
+  用的是 debug 证书时在日志里给出显式告警,并把提示写进 Release 说明 —— 避免「以为发的是正式签名包」。
 - **重复标签保护**:同一标签推送两次,第二次在创建 Release 时报「已存在」而失败,属预期保护;要重发需先删标签与 Release。
 - 该工作流不跑 lint(与 CI 分工:CI 管 PR/分支质量门禁,Release 管出包),签名规则见第 4 节 —— 未配置 `keystore.properties`(CI 上即 Secrets 未注入)时出 debug 证书签名的包。
 
-### 0.1 更新源与版本清单(手动排查用)
+### 0.1 干跑:不打正式标签先验一遍
+
+正式标签会真的发出一个 Release(不可撤销),所以发版链本身可以先用同一份工作流干跑一遍:
+**Actions → Android Release → Run workflow**(选 `main` 分支),输入:
+
+| 输入 | 说明 |
+|---|---|
+| `tag` | 要模拟的发版标签,如 `v1.0.0`;留空 = 取 `version.properties` 的 `versionName` |
+| `dry_run` | 默认 `true`。干跑不发 Release,重建的 `dist/update.json` 只推到临时分支 |
+| `manifest_branch` | 干跑时清单回推的分支,默认 `dryrun/update-manifest` |
+
+与正式发版的差异只有两处:**不创建 GitHub Release**、**清单不回推 `main`**;其余步骤(标签＝versionName 硬校验、
+单测、R8 release 包、APK 签名与包内版本自证、清单重建、API/raw 线上自证)完全一致。工作流还会额外断言
+`main` 上的清单没被干跑改动过 —— 干跑不允许影响真正的更新通道。
+
+```bash
+gh workflow run release.yml -f tag=v1.0.0 -f dry_run=true    # 效果同上,命令行触发
+gh run watch                                                 # 跟着看
+```
+
+干跑会留下一个临时分支(它本身就是「回推成功」的证据),确认没问题后删掉:
+
+```bash
+git push origin --delete dryrun/update-manifest
+```
+
+本地也能干跑同一套护栏(不依赖 CI,秒级反馈;脚本在真机验证工具目录 `android/verify/`,不入库):
+
+```bash
+cd android && python verify/dryrun_release.py            # 15 项:解析输入/标签护栏/清单重建+回推/自证/签名与版本
+python verify/dryrun_release.py --no-push                # 只验证重建与自洽,不写远端
+python verify/dryrun_release.py --only-verify            # 只重跑「线上自证」步骤
+```
+
+它直接把 `release.yml` 里真实的 `run:` 块抽出来执行(而不是重写一份等价逻辑),所以工作流改了它也跟着变。
+
+### 0.2 更新源与版本清单(手动排查用)
 
 清单格式(`core/data` 的 `UpdateRepository` 解析 `version` / `notes[]` / `url`):
 
@@ -217,5 +255,6 @@ scripts/gradle.sh :app:signingReport
 | release 包安装后崩溃、debug 正常 | R8 裁掉了反射所需成员。按第 6 节补充 keep 规则 |
 | App 里「检查更新」总是失败 | 默认更新源是 GitHub raw 直链(国内网络可能不可达)。确认网络可访问 `raw.githubusercontent.com`,或把 `freebuff.updateUrl` 指向自建更新源 |
 | 发版后 App 仍显示「已是最新」 | 看 release 工作流末尾「Verify published update source」是否失败(清单未回推到 main);重跑该工作流即可 |
+| 想在不发版的前提下验证发版链 | 按 0.1 节干跑:同一份工作流,只把清单推到临时分支、不建 Release |
 | 想改更新源地址 | 优先用 `freebuff.updateUrl` / `FREEBUFF_UPDATE_URL`(不必改代码);只有默认值要变时才改 `app/build.gradle.kts` 里的 `updateUrl` 常量 |
 | `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | 设备上已装同包名但签名不同的应用,先卸载旧包 |
