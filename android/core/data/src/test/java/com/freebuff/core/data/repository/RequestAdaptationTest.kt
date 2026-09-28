@@ -97,11 +97,14 @@ class RequestAdaptationTest {
     }
 
     @Test
-    fun `Qwen 式 enable_thinking 不受工具历史影响`() {
+    fun `Qwen 式 enable_thinking 在回传工具结果轮同样剥离`() {
+        // 真机 mock 实测:严格网关(LiteLLM modify_params 同款)对回传工具结果轮的任何
+        // 思考标志都直接 400 —— enable_thinking 与 thinking 同等对待,不能豁免
         val b = body(
             listOf(ChatMessage.assistantWithCalls("", listOf(ToolCallReq("c1", "current_time", "{}")))),
             ReasoningPlan(com.freebuff.core.model.ReasoningFlavor.ENABLE_THINKING),
         )
-        assertTrue(b.optBoolean("enable_thinking"))
+        assertFalse("带工具调用的轮次不能再送 enable_thinking", b.has("enable_thinking"))
+        assertTrue("工具定义仍在", b.has("tools"))
     }
 }

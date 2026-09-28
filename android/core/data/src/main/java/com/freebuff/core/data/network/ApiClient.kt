@@ -132,7 +132,11 @@ fun buildChatRequest(
                 body.put("max_completion_tokens", reasoning.maxCompletionTokens)
             }
         }
-        ReasoningFlavor.ENABLE_THINKING -> body.put("enable_thinking", true)
+        // enable_thinking 与 thinking 同款冲突:回传带 tool_calls 的 assistant 消息那轮
+        // 不能再声明开启思考,严格网关(如 LiteLLM modify_params)会直接 400 —— 实测抓到。
+        ReasoningFlavor.ENABLE_THINKING -> if (!thinkinglessToolCall) {
+            body.put("enable_thinking", true)
+        }
         ReasoningFlavor.THINKING_BUDGET -> if (!thinkinglessToolCall) {
             body.put(
                 "thinking",

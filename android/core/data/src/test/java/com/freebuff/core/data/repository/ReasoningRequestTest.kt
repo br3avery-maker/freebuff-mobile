@@ -2,6 +2,7 @@ package com.freebuff.core.data.repository
 
 import com.freebuff.core.data.network.ChatMessage
 import com.freebuff.core.model.Reasoning
+import com.freebuff.core.model.ToolCallReq
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
@@ -60,6 +61,29 @@ class ReasoningRequestTest {
         assertTrue(body.getBoolean("enable_thinking"))
         assertFalse(body.has("reasoning_effort"))
         assertFalse(body.has("max_completion_tokens"))
+    }
+
+    @Test
+    fun `Qwen 系回传工具调用的那轮不带 enable_thinking`() = runTest {
+        // enable_thinking 与 thinking 同款冲突:历史里已有带 tool_calls 的 assistant 消息时,
+        // 该轮再声明开启思考会被严格网关 400(真机 mock 实测抓到,与 LiteLLM modify_params 同源)
+        server.enqueue(MockResponse().setBody("data: [DONE]\n\n"))
+        repo.chatStream(
+            endpoint = server.url("/v1").toString(),
+            model = "qwen3-235b",
+            apiKey = "",
+            headers = emptyMap(),
+            skipTLS = false,
+            history = listOf(
+                ChatMessage.text("user", "hi"),
+                ChatMessage.assistantWithCalls("", listOf(ToolCallReq("c1", "current_time", "{}"))),
+                ChatMessage.toolResult("c1", "12:00"),
+            ),
+            reasoning = Reasoning.plan(Reasoning.MODE_AUTO, "qwen3-235b"),
+            idleTimeoutMs = 0,
+        ).toList()
+        val body = JSONObject(server.takeRequest().body.readUtf8())
+        assertFalse(body.has("enable_thinking"))
     }
 
     @Test

@@ -118,10 +118,11 @@ sealed interface ApiResult<out T> {
 `verify/mock_variants.py` 是按「最后一条 user 消息里的 `case xxx`」切场景的变体 mock,覆盖上表每一项并在
 服务端打印 `PASS/FAIL`;设备端用 `verify/send_case.py <case>` 发一条消息后 grep 日志即可回归。
 
-成规模的回归用「场景矩阵」:`verify/mock_matrix.py` 在 `127.0.0.1:8899` 起 mock(按 `case xxx` 切 26 个场景),
+成规模的回归用「场景矩阵」:`verify/mock_matrix.py` 在 `127.0.0.1:8899` 起 mock(按 `case xxx` 切 29 个场景),
 `verify/matrix.py` 逐场景在真机上跑完一轮并把断言写进 `verify/matrix_report.md`;个别场景需要看库才能判定
 (如「工具后只回文本要被提醒续跑」),用 `verify/recheck.py <case> <期望文本>` 盯库复验,不依赖界面空闲。
-长会话回归见 `verify/longsession.py`(结果见 `docs/context-engineering.md` §5)。
+矩阵支持断点续跑:结果逐场景落 `verify/matrix_state.jsonl`(进程被杀不丢进度),全量重跑时已 PASS 的直接沿用、
+只补没过的;点名场景永远实跑,`--fresh` 全部重跑。长会话回归见 `verify/longsession.py`(结果见 `docs/context-engineering.md` §5)。
 
 #### 3.3.4 回合循环与对话体验(全部由真机实测暴露,规则写在 `core:model`)
 
@@ -196,6 +197,12 @@ task_completed)豁免:它们是循环唯一的出口,熔断它们反而会锁死
 **怎么让弱模型学会**:`ContextBuilder` 在附带工具定义的轮次里注入一段「工具使用约定」(不带工具时不注入,
 免得诱发幻觉调用):参数只写说明书里的名字、结果以 `[工具错误]` 开头就照「问题 / 怎么改」修正后**重试一次**、
 同一工具连续出错两次就换工具或直接说明、工具名只能用清单里的。
+真机验证(2026-09-27,`case mergerr`,grok-4.7):一次带三个自造参数(mode/sort/lang)调 `calculator`,
+端上回 ①②③ 合并处方式信封(每条问题带各自改法 + 参数清单 + 示例);模型下一轮删掉全部自造参数、
+保留合法 `expression`,**一次改对并执行成功**(`(12+8)*3.5 = 70`)。注意:合并只发生在 schema 级错误之间
+(自造参数/缺必填/越界/枚举),calculator 的表达式解析失败发生在执行层 —— 体检先行,两类错不会同框;
+记忆类工具(save_memory/memory_recall)走端侧专用分支,自己报错、不进体检信封。
+
 三者配合的效果:报错→改对→跑通,而不是报错→重发→再报错。
 
 回归位置:`ToolErrorsTest`(信封形状/单条与合并处方/升级/熔断信封/近邻建议/HTTP 处方)、`ToolsTest`
@@ -211,9 +218,9 @@ mock 断言「信封有处方」PASS → 改对的调用算出 `6*7 = 42` →「
 注意:加字段只加 JSON Schema 的常规关键字(enum/minimum/maximum/default),**不开 `strict` 模式** ——
 严格端点对未知模式标志会 400;实测真实网关(OpenAI 兼容)接受这套 schema 并正确调工具。
 
-#### 3.3.6 场景矩阵回归结果(真机 26 场景)
+#### 3.3.6 场景矩阵回归结果(真机 29 场景)
 
-`verify/mock_matrix.py` + `verify/matrix.py` 的 26 个场景(以 `verify/matrix.py` 的 `CASES` 为准):
+`verify/mock_matrix.py` + `verify/matrix.py` 的 29 个场景(以 `verify/matrix.py` 的 `CASES` 为准):
 `emptyargs` 无参工具仍要执行 / `parallel` 一次两个无 index 调用按 id 分槽 / `multiline` 事件跨两条 data 行 /
 `badargs` 参数栅栏·单引号·尾逗号修复后执行 / `errframe` HTTP 200 里夹错误帧 / `legacy` 遗留 `function_call` +
 末尾无空行 / `thinking` Anthropic 思考参数规则 / `single` 一次工具 + 正文 + 显式收工 / `progress` 只回文本的
@@ -221,10 +228,13 @@ mock 断言「信封有处方」PASS → 改对的调用算出 `6*7 = 42` →「
 `repeatcall` 同一调用重放要复用并连续 2 轮停 / `cap` 每轮换参数打到 30 轮上限 / `http500` 重试后成功 /
 `http401` 不可重试直接报错 / `trunc` 流被截断不能卡死 / `empty` 空回复端上给提示 / `memsave` 核心记忆落库 /
 `reason` `reasoning_content` 落库并折叠展示 / `longtext` 长正文全文到达 / `thinkreject` 端点拒思考参数后去字段重发 /
-`notools` 端点拒 tools 后去字段重发并提示(必须放最后:本会话后续请求都不再带工具)/
+`notools` 端点拒 tools 后去字段重发并提示(必须放最后:本会话后续请求都不再带工具)/ `long` 长会话压测
+(24 轮工具调用+收工,端上连续运行 rounds≥25)/
 `argerr` 自造参数名 → 错误信封给处方,按建议改对后自愈 /
 `killstart` 流开零字节被杀 → 正文修成「(上次生成被中断,可重新发送)」/ `killmid` 半途正文被杀 →
-正文保留、过程性步骤清干净 / `killtool` 确认弹窗等待时被杀 → waiting 卡片标未完成。
+正文保留、过程性步骤清干净 / `killtool` 确认弹窗等待时被杀 → waiting 卡片标未完成 / `breaker` 同一工具连败三次 →
+端上熔断拒绝执行(CIRCUIT_OPEN),不再只劝模型 / `mergerr` 一次带三个自造参数 →
+①②③ 合并处方,照处方改对后一次执行成功。
 
 kill 三连单独成组(`python verify/matrix.py killstart killmid killtool`),断言四段:中断半成品形态 →
 冷启动自动修复 → 幂等(再冷启动一次形态逐字不变)→ 进会话看界面无陈旧步骤。制造中断:killstart/killmid 用
@@ -237,8 +247,15 @@ mock 的 chunked **永不结束流**(收下请求只写分块、不发终止块)
 证据:killstart/killmid/killtool 连续两轮 3/3 PASS(`verify/matrix_report.md`),修复形如
 正文保留 + 卡片 `[save_memory, error, (未完成)]` + 步骤清空,冷启动日志 `FreebuffStartup: repaired 1 interrupted message(s)`。
 
-- 全量:20/22 直接 PASS;两个 FAIL 经定位都不是产品缺陷 —— `thinking` 当时设备模型是 `grok-4.7`(断言只对
-  claude/glm 族生效),`progress` 是矩阵把多轮的中间态误判为结束。
+- 全量(2026-09-28,29 场景):**29/29 PASS**(断点续跑合并报告,历史沿用 26 + 本轮实跑 thinking/progress/long)。
+  此前 2026-09-27 口径 25/28,三个 FAIL 复查后修掉:`thinking` 挖出**真产品缺陷** —— `enable_thinking` 与
+  `thinking` 同款冲突,回传带 tool_calls 的 assistant 消息那轮再声明开启思考,严格网关直接 400
+  (grok-4.7 真机抓到;`ApiClient` 已修:两个 flavor 共用 `thinkinglessToolCall` 守卫,584 用例全绿);
+  `progress`/`long` 是矩阵口径:settle 改锚定 `ChatViewModel` 的操作级日志(`op begin/finish/failed/cancelled
+  sid=…`,finish 行带 `rounds=N`,必须是本轮新出现的行 —— 共享会话里同一 sid 有历史 finish),
+  logcat 断言改 `logcat -d -s ChatViewModel` 定向读(不再被全量长跑稀释),`long` 重写为
+  24 轮 calculator(每轮算式必须不同 —— `current_time` 无参、每轮同参会被端上重复调用检测正确掐断)+ 收工。
+  历史口径:20/22(23 场景时代)。
 - 换成 `claude-3-7-sonnet` 重跑:`thinking`/`thinkreject` 均 PASS(Anthropic 规则在真机成立:首轮送
   `think=['thinking']`,带工具历史那轮不送)。
 - `progress` 用 `recheck.py` 盯库复验 PASS:正文为三段进度播报,logcat 里 `nudge #1 → round 3 → op finish rounds=3`,
