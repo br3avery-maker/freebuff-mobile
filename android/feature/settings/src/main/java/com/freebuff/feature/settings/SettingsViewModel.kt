@@ -1,5 +1,6 @@
 package com.freebuff.feature.settings
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.freebuff.core.data.network.ApiResult
@@ -10,6 +11,7 @@ import com.freebuff.core.data.repository.GitConnectStep
 import com.freebuff.core.data.repository.ModelCatalogRepository
 import com.freebuff.core.data.repository.SessionRepository
 import com.freebuff.core.data.repository.SettingsRepository
+import com.freebuff.core.data.repository.UpdateDownloader
 import com.freebuff.core.data.repository.UpdateRepository
 import com.freebuff.core.model.CustomModel
 import com.freebuff.core.model.GitState
@@ -22,6 +24,8 @@ import com.freebuff.core.model.uid
 import com.freebuff.core.ui.navigation.AppNavState
 import com.freebuff.core.ui.navigation.AppNavigator
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import java.io.File
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,6 +48,9 @@ class SettingsViewModel @Inject constructor(
     private val catalog: ModelCatalogRepository,
     private val gitAuth: GitAuthRepository,
     private val updateRepo: UpdateRepository,
+    private val updateDownloader: UpdateDownloader,
+    /** 下载安装包落在应用缓存目录(与 app 的 file_paths.xml 对应)。 */
+    @ApplicationContext private val context: Context,
     private val navigator: AppNavigator,
     /** 已安装版本号(BuildConfig.VERSION_NAME)。版本显示以实际安装的包为准,不落库、不可被覆盖。 */
     @Named("appVersion") val appVersion: String,
@@ -318,21 +325,64 @@ class SettingsViewModel @Inject constructor(
     /** 当前更新源主机名(失败提示里指明实际请求的地址)。 */
     val updateSource: String get() = updateRepo.sourceLabel
 
+    /** 应用内下载状态(更新面板只读它)。 */
+    private val _download = MutableStateFlow<UpdateDownload>(UpdateDownload.Idle)
+    val download: StateFlow<UpdateDownload> = _download.asStateFlow()
+
+    private var downloadJob: Job? = null
+
     /**
      * 检查更新(真实拉取更新源)。
+     *
+     * 瞬时失败(超时/连接/DNS/5xx)已在数据层静默重试:一次网络抖动不该让用户先看到红字,
+     * 大部分情况下重试一次就好了。配置类错误仍然立刻报出来。
+     *
      * @param onResult (远程版本, 是否有更新, 失败文案;失败时前两项为 null/false)
      */
     fun checkForUpdate(onResult: (RemoteVersion?, Boolean, String?) -> Unit) {
         viewModelScope.launch {
-            when (val r = updateRepo.check()) {
+            when (val r = updateRepo.checkWithRetry()) {
                 is ApiResult.Ok -> onResult(r.data, r.data.isNewerThan(appVersion), null)
                 is ApiResult.Err -> onResult(null, false, r.error.userMessage)
             }
         }
     }
 
+    /**
+     * 下载本次更新到缓存目录并校验指纹(校验不过不会把文件交出去)。
+     * 重复点击直接忽略 —— 正在下的那次算数,免得两份大包同时写盘。
+     */
+    fun startUpdateDownload(remote: RemoteVersion) {
+        if (downloadJob?.isActive == true) return
+        val url = remote.apkUrl
+        if (url.isBlank()) return
+        _download.value = UpdateDownload.Running(0L, remote.apkSize)
+        downloadJob = viewModelScope.launch {
+            // 文件名取自直链:与发布资产的命名一致,用户去缓存目录看也知道是哪个版本
+            val name = url.substringAfterLast('/').substringBefore('?').ifBlank { "freebuff-update.apk" }
+            val dest = File(File(context.cacheDir, UPDATE_DIR), name)
+            val r = updateDownloader.download(url, remote.apkSha256, dest) { received, total ->
+                _download.value = UpdateDownload.Running(received, if (total > 0) total else remote.apkSize)
+            }
+            _download.value = when (r) {
+                is ApiResult.Ok -> UpdateDownload.Ready(r.data)
+                is ApiResult.Err -> UpdateDownload.Failed(r.error.userMessage)
+            }
+        }
+    }
+
+    /** 取消下载并清掉状态(面板重新打开时用,不然会一直停在上一轮的进度或错误上)。 */
+    fun resetUpdateDownload() {
+        downloadJob?.cancel()
+        downloadJob = null
+        _download.value = UpdateDownload.Idle
+    }
+
     private companion object {
         /** 「清除全部会话」二次确认的自动解除时长(毫秒)。 */
         const val CLEAR_ARM_MS = 2200L
+
+        /** 下载好的安装包放这里(与 app 的 file_paths.xml 一致)。 */
+        const val UPDATE_DIR = "update"
     }
 }

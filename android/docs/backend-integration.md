@@ -269,15 +269,21 @@ mock 的 chunked **永不结束流**(收下请求只写分块、不发终止块)
 
 ### 3.5 版本检查(UpdateRepository)
 
-`GET {updateUrl}` → `{version, notes[], url}`;未配置 → `NotConfigured`;非 2xx → `Http`(带 `HttpTarget.UpdateSource`,
-404 文案指向更新源而非模型端点);非 JSON / 缺 `version` → `Parse`。
+`GET {updateUrl}` → `{version, summary, notes[], url, apk{url, sha256, size}}`;未配置 → `NotConfigured`;非 2xx → `Http`(带 `HttpTarget.UpdateSource`,
+404 文案指向更新源而非模型端点);非 JSON / 缺 `version` → `Parse`。`summary` 与 `apk` 都是可选扩展:
+老清单缺了照样能检查更新,只是面板退化成「前往下载」。
+
+`UpdateRepository.checkWithRetry()` 对瞬时失败(超时/连接/DNS/5xx/429)静默重试 3 次(线性退避,见
+`network/SilentRetry.kt`);`check()` 保持单次语义,单测与「手动重试」按钮直接用后者 —— 一次网络抖动不该让用户先看到红字。
 
 默认更新源是本仓库公开的 `dist/update.json`(raw.githubusercontent.com 直链,匿名可读),发版时由
 `.github/workflows/release.yml` 用 `scripts/update-manifest.py` 重建并回推 `main`,随后从 GitHub API + raw
 两条路径自证线上版本已对齐;CI(`android.yml`)用同一脚本校验清单版本不高于产品版本。
 
-`UpdateSheet` 分「检查中 / 有更新(列出说明 + 前往下载)/ 已是最新 / 失败(可重试)」四态;
-版本显示与实际比较都用 `BuildConfig.VERSION_NAME`(源于 `android/version.properties`),App 不自行安装 APK。
+`UpdateSheet` 分「检查中 / 有更新 / 已是最新 / 失败(可重试)」四态;有更新时先说 `summary` 再列 `notes`。
+清单带 `apk` 块时,面板内直接下载 → 对 `apk.sha256` 校验 → 交系统安装器(`UpdateDownloader`:先写 `.part`,
+校验通过才原子改名,指纹不符立即丢弃且**不重试**);没有 `apk` 块则退化为「前往下载」跳发布页。
+版本显示与实际比较都用 `BuildConfig.VERSION_NAME`(源于 `android/version.properties`)。
 
 ## 4. 配置项
 

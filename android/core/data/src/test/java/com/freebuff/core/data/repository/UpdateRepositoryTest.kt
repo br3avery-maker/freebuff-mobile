@@ -8,6 +8,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -82,6 +83,63 @@ class UpdateRepositoryTest {
         )
         val v = (repo(server.url("/u").toString()).check() as ApiResult.Ok).data
         assertEquals("https://example.com/releases/latest", v.url)
+    }
+
+    @Test
+    fun `解析 summary 与 apk 指纹块`() = runTest {
+        val digest = "ab".repeat(32)
+        server.enqueue(
+            MockResponse().setBody(
+                """{"version":"0.4.0","summary":"修了一处崩溃","notes":["修复 A"],
+                   "apk":{"url":"https://example.com/a.apk","sha256":"$digest","size":1234}}""",
+            ),
+        )
+        val v = (repo(server.url("/u").toString()).check() as ApiResult.Ok).data
+        assertEquals("修了一处崩溃", v.summary)
+        assertEquals("https://example.com/a.apk", v.apkUrl)
+        assertEquals(digest, v.apkSha256)
+        assertEquals(1234L, v.apkSize)
+        assertTrue(v.canDownloadInApp)
+    }
+
+    @Test
+    fun `老清单没有 apk 块时退化为跳发布页`() = runTest {
+        server.enqueue(
+            MockResponse().setBody("""{"version":"0.4.0","url":"https://example.com/releases/latest"}"""),
+        )
+        val v = (repo(server.url("/u").toString()).check() as ApiResult.Ok).data
+        assertEquals("", v.summary)
+        assertEquals("", v.apkUrl)
+        assertEquals(0L, v.apkSize)
+        assertFalse(v.canDownloadInApp)
+        assertEquals("https://example.com/releases/latest", v.url)
+    }
+
+    @Test
+    fun `apk 缺指纹或非 https 时不允许应用内下载`() = runTest {
+        server.enqueue(
+            MockResponse().setBody("""{"version":"0.4.0","apk":{"url":"http://example.com/a.apk","sha256":"ab","size":1}}"""),
+        )
+        val v = (repo(server.url("/u").toString()).check() as ApiResult.Ok).data
+        assertFalse(v.canDownloadInApp)
+    }
+
+    @Test
+    fun `checkWithRetry 在瞬时失败后自己重试成功`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(503).setBody("busy"))
+        server.enqueue(MockResponse().setBody("""{"version":"0.4.0"}"""))
+        val r = repo(server.url("/u").toString()).checkWithRetry(attempts = 2)
+        assertTrue(r is ApiResult.Ok)
+        assertEquals("0.4.0", (r as ApiResult.Ok).data.version)
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `checkWithRetry 遇到配置类错误立刻返回`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(404).setBody("gone"))
+        val r = repo(server.url("/u").toString()).checkWithRetry(attempts = 3)
+        assertTrue((r as ApiResult.Err).error is ApiError.Http)
+        assertEquals(1, server.requestCount)
     }
 
     @Test

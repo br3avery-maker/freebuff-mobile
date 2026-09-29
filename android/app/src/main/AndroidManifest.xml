@@ -4,6 +4,12 @@
     <!-- 聊天/目录拉取/Git 授权/版本检查全部依赖网络 -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!--
+      应用内更新:下载并校验过指纹的安装包要交给系统安装器。
+      Android 8.0+ 还需用户在系统里单独允许「安装未知应用」,App 会先检查并把用户送过去。
+    -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <application
         android:name="com.freebuff.app.FreebuffApplication"
         android:allowBackup="true"
@@ -21,6 +27,20 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+          更新包落在 cacheDir/update/(应用私有,外部存储读不到),
+          只能经 content:// 交出去 —— 直接传文件路径给安装器在高版本上会被拒。
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 
 </manifest>

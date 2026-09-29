@@ -219,36 +219,34 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REF: ${{ steps.rel.outputs.ref }}
+          VERSION_BASE: ${{ steps.rel.outputs.version_base }}
+          VERSION_LABEL: ${{ steps.rel.outputs.version_label }}
           SIGNED: ${{ steps.apk.outputs.signed }}
         run: |
+          cd "${GITHUB_WORKSPACE}"
           PREV=$(git describe --tags --abbrev=0 "${REF}^" 2>/dev/null || true)
-          if [ -n "$PREV" ] && [ "$PREV" != "$REF" ]; then
-            NOTES=$(git log --pretty=format:'- %s (%h)' "$PREV..$REF")
-          else
-            NOTES=""
-          fi
-          [ -n "$NOTES" ] || NOTES="- 首个自动发版"
+          # 写成 if 而不是 `[ ] && X`:守门式短路在 -e 下容易变成静默失败源
+          if [ "$PREV" = "$REF" ]; then PREV=""; fi
           if [ "$SIGNED" = "debug" ]; then
             SIGN_NOTE="> ⚠️ 本包为 **debug 证书**签名(未注入发版密钥),可安装体验,不可上架;日后换成正式签名需先卸载旧版。"
           else
             SIGN_NOTE=""
           fi
+          # 可读变更摘要(一句话摘要 + 分组条目)与 dist/update.json 的 notes 同源,分组规则只维护一处
+          python3 scripts/update-manifest.py "$VERSION_BASE" --release-notes --prev "$PREV" --ref "$REF" > release-notes.md
+          cat release-notes.md
           {
-            echo "自动发布 ${REF}。"
-            echo
-            echo "## 变更"
-            echo
-            echo "$NOTES"
+            cat release-notes.md
             echo
             echo "$SIGN_NOTE"
             echo "---"
             echo
             echo "**安装**:下载 APK(Android 8.0+,允许安装未知来源)。签名证书说明见 docs/build-and-release.md。"
-          } > release-notes.md
+          } > release-body.md
           gh release create "${REF}" \
-            "dist/FreebuffMobile-${{ steps.rel.outputs.version_label }}-release.apk" \
+            "android/dist/FreebuffMobile-${VERSION_LABEL}-release.apk" \
             --title "Freebuff Mobile ${REF}" \
-            --notes-file release-notes.md
+            --notes-file release-body.md
 
       # 发版后重建 dist/update.json —— App 内「检查更新」拉取的数据源(UPDATE_URL 默认直链它)。
       # 生成与校验共用 scripts/update-manifest.py(CI 的 --check 与本地/发版同一份规则)。
@@ -261,13 +259,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REF: ${{ steps.rel.outputs.ref }}
           VERSION_BASE: ${{ steps.rel.outputs.version_base }}
+          VERSION_LABEL: ${{ steps.rel.outputs.version_label }}
           DEST: ${{ steps.rel.outputs.manifest_branch }}
         run: |
           cd "${GITHUB_WORKSPACE}"
           PREV=$(git describe --tags --abbrev=0 "${REF}^" 2>/dev/null || true)
+          if [ "$PREV" = "$REF" ]; then PREV=""; fi
+          # 带上产物指纹,App 才能直接下载并校验安装包(sha256 由脚本从产物算,不靠人工填)。
+          # 路径与「Inspect APK」同源:那一步已经硬校验过文件存在,这里缺失只警告(本地干跑不构建产物)。
+          APK_FILE="android/dist/FreebuffMobile-${VERSION_LABEL}-release.apk"
+          APK_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${REF}/FreebuffMobile-${VERSION_LABEL}-release.apk"
+          [ -f "$APK_FILE" ] || echo "::warning::找不到产物 $APK_FILE —— 清单将不带 apk 块(App 内只能跳发布页)"
           # 清单是生成物:重建 + 自洽校验捆成一件事,重试时重复调用即可(幂等)
           regen() {
-            python3 scripts/update-manifest.py "$VERSION_BASE" --prev "$PREV" --ref "$REF"
+            python3 scripts/update-manifest.py "$VERSION_BASE" --prev "$PREV" --ref "$REF" \
+              --apk-file "$APK_FILE" --apk-url "$APK_URL"
             python3 scripts/update-manifest.py --check
           }
           regen

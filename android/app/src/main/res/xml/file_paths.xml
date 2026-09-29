@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider 只开放更新包目录:路径与 SettingsViewModel.UPDATE_DIR("update")、
+  UpdateSheet.launchInstaller 里用的 authority(<applicationId>.fileprovider)一一对应。
+  这里刻意不放行 filesDir / 外部存储 —— 能交出去的东西越少越好。
+-->
+<paths>
+    <cache-path name="update" path="update/" />
+</paths>

@@ -71,11 +71,25 @@ python verify/dryrun_release.py --only-verify            # 只重跑「线上自
 
 ### 0.2 更新源与版本清单(手动排查用)
 
-清单格式(`core/data` 的 `UpdateRepository` 解析 `version` / `notes[]` / `url`):
+清单格式(`core/data` 的 `UpdateRepository` 解析 `version` / `summary` / `notes[]` / `url` / `apk`):
 
 ```json
-{ "version": "1.2.0", "url": "https://github.com/doubao01/freebuff-mobile/releases/latest", "notes": ["..."] }
+{
+  "version": "1.2.0",
+  "url": "https://github.com/doubao01/freebuff-mobile/releases/latest",
+  "summary": "一句话可读摘要(更新面板顶部那行)",
+  "notes": ["..."],
+  "apk": {
+    "url": "https://github.com/doubao01/freebuff-mobile/releases/download/v1.2.0/FreebuffMobile-1.2.0-release.apk",
+    "sha256": "<64 位小写十六进制>",
+    "size": 1488526
+  }
+}
 ```
+
+- `summary` / `apk` 都是**可选**扩展:缺了照样能检查更新,只是更新面板退化成「前往下载」跳发布页。
+- 带上 `apk` 则面板内**直接下载并校验 sha256** 再交系统安装器 —— 指纹由发版工作流从真实产物算出
+  (`--apk-file`),不靠人工填;校验不过的包会被丢弃,不会交给安装器。
 
 - **默认地址**:`https://raw.githubusercontent.com/doubao01/freebuff-mobile/main/dist/update.json`
   (仓库公开,匿名可读;App 只发一次 GET,无任何密钥)。
@@ -87,8 +101,13 @@ python verify/dryrun_release.py --only-verify            # 只重跑「线上自
 
 ```bash
 python3 scripts/update-manifest.py 1.2.0 --prev v1.1.0   # 生成(不给 --prev 就取最近提交)
+python3 scripts/update-manifest.py 1.2.0 --prev v1.1.0 --apk-file android/dist/FreebuffMobile-1.2.0-release.apk
 python3 scripts/update-manifest.py --check               # CI 同款校验
+python3 scripts/update-manifest.py 1.2.0 --prev v1.1.0 --release-notes   # 可读变更摘要(Release 正文用)
 ```
+
+> `--release-notes` 把提交标题按「修复 / 新增 / 改进 / 文档 / 发版与工程」分组并挑一句摘要,
+> Release 正文与清单的 `notes` 同源 —— 分组规则只维护一处(`scripts/update-manifest.py`)。
 
 - **不要手工把清单版本改得比 `version.properties` 更高**:那会让所有用户看到「有新版本」却永远装不上,
   CI 会直接拦下;补发旧标签时脚本也会拒绝把清单降级。

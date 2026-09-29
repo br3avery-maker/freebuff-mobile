@@ -4,6 +4,7 @@ import com.freebuff.core.data.network.ApiError
 import com.freebuff.core.data.network.ApiResult
 import com.freebuff.core.data.network.HttpTarget
 import com.freebuff.core.data.network.apiCallIo
+import com.freebuff.core.data.network.silentRetry
 import com.freebuff.core.model.RemoteVersion
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -57,8 +58,25 @@ class UpdateRepository @Inject constructor(
                 val notes = o.optJSONArray("notes")?.let { arr ->
                     (0 until arr.length()).mapNotNull { arr.optString(it).takeIf { s -> s.isNotEmpty() } }
                 } ?: emptyList()
-                RemoteVersion(version = version, notes = notes, url = o.optString("url"))
+                // apk 块是可选扩展:老清单没有它,面板就退化回「前往下载」
+                val apk = o.optJSONObject("apk")
+                RemoteVersion(
+                    version = version,
+                    summary = o.optString("summary").trim(),
+                    notes = notes,
+                    url = o.optString("url"),
+                    apkUrl = apk?.optString("url").orEmpty(),
+                    apkSha256 = apk?.optString("sha256").orEmpty(),
+                    apkSize = apk?.optLong("size") ?: 0L,
+                )
             }
         }
     }
+
+    /**
+     * 检查更新,瞬时失败(超时/连接/DNS/5xx)静默重试。
+     * 保留单次语义的 [check] 不动:单测与「手动重试」按钮都直接用它。
+     */
+    suspend fun checkWithRetry(attempts: Int = 3): ApiResult<RemoteVersion> =
+        silentRetry(attempts) { check() }
 }

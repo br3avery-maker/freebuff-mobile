@@ -132,10 +132,25 @@ data class ChatTarget(
 /** 远程版本检查结果。 */
 data class RemoteVersion(
     val version: String = "",
+    /** 一句话摘要(清单 summary):更新面板顶部那行,没有就只展示 notes。 */
+    val summary: String = "",
     val notes: List<String> = emptyList(),
     /** 新版 APK 下载页(可选)。update.json 带 url 时,更新面板展示「前往下载」。 */
     val url: String = "",
+    /** 安装包直链(清单 apk.url)。有它才能在 App 内下载,不用把用户丢到浏览器。 */
+    val apkUrl: String = "",
+    /** 安装包 sha256(清单 apk.sha256):下完必须对上,否则丢弃。 */
+    val apkSha256: String = "",
+    /** 安装包字节数(清单 apk.size):进度条总量与下载前的大小提示。 */
+    val apkSize: Long = 0L,
 ) {
+    /**
+     * 能否应用内下载并校验 —— 两者缺一不可:
+     * 没有指纹就不该把「下完就装」的按钮摆出来(明址 HTTP 也会被系统拦掉)。
+     */
+    val canDownloadInApp: Boolean
+        get() = apkUrl.startsWith("https://") && apkSha256.isNotBlank()
+
     fun isNewerThan(current: String): Boolean {
         val v = version.removePrefix("v")
         val c = current.removePrefix("v")

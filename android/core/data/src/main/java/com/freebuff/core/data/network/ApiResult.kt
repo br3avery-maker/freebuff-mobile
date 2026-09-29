@@ -58,6 +58,15 @@ sealed class ApiError(message: String, cause: Throwable? = null) : Exception(mes
     class CleartextBlocked(cause: Throwable? = null) :
         ApiError("地址不被允许:Android 默认禁止明文 HTTP,请把该地址换成 https", cause)
 
+    /**
+     * 下载下来的安装包与清单里的指纹不符(被截断 / 被掉包 / 服务端给了错误页)。
+     * 这类失败绝不能把文件交给安装器 —— 那等于放行一个来源不明的包,所以直接丢弃重下。
+     */
+    class ChecksumFailed(expected: String, actual: String) : ApiError(
+        "安装包校验失败:下载内容与官方指纹不一致(期望 " + expected.take(12) + "…,实际 " +
+            (if (actual.isBlank()) "无法计算" else actual.take(12) + "…") + "),已丢弃,请重试",
+    )
+
     /** 调用方主动取消。 */
     class Cancelled : ApiError("请求已取消")
 
@@ -133,6 +142,17 @@ fun Throwable.toApiError(httpCode: Int? = null): ApiError {
         is CancellationException -> ApiError.Cancelled()
         else -> ApiError.Unknown(this)
     }
+}
+
+/**
+ * 是否值得**静默重试**:超时/连不上/DNS 这类瞬时故障重试一次往往就好了;
+ * 而配置类错误(未配置、明文被拦、TLS、鉴权、指纹不符)重试只是白等,应当立刻告诉用户。
+ */
+fun ApiError.isTransient(): Boolean = when (this) {
+    is ApiError.Timeout, is ApiError.Unreachable, is ApiError.Dns, is ApiError.Unknown -> true
+    // 408 请求超时、429 限流、5xx 服务端错误都属瞬时;其余 4xx 是配置/凭据问题
+    is ApiError.Http -> code in 408..599
+    else -> false
 }
 
 /* ---------------- 结果包装 ---------------- */
