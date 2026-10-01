@@ -16,6 +16,12 @@ name: Android Release
 # 干跑(Actions 页面手动触发,workflow_dispatch):跑同一套步骤,但**不发 Release**,
 # 重建的 dist/update.json 也只回推到临时分支,main 与更新通道完全不动 ——
 # 用来在打正式标签之前验证「标签 → 版本号 → 清单 → 回推 → 线上自证」整条链。
+#
+# 发版前先在模拟器上对**刚打出来的这个 APK**跑 29 个端到端场景(verify/ci_run_matrix.py):
+# 有 FAIL 就直接卡住,不发 Release。单元测试过的是策略,这一层过的是「装上去点下去」——
+# 矩阵里全是端到端断言(杀进程后自动修复、工具熔断、HTTP 失败态、长会话 25 轮…)。
+# 矩阵门禁与发版在同一个 job,测的就是这一步刚产出的包,不存在「测的包 ≠ 发的包」。
+# 报告写进 Step Summary,截图/日志/状态清单作为 e2e-matrix artifact 留档。
 
 on:
   push:
@@ -212,6 +218,52 @@ jobs:
             echo "signed=$SIGNED"
             echo "path=$APK"
           } >> "$GITHUB_OUTPUT"
+
+      # 端到端矩阵门禁:对刚打出来的 APK 在模拟器上跑 29 个场景,FAIL 就不发版。
+      # 放在「Create GitHub Release」之前 —— 这才是真的阻断:发出去的包永远跑过这一趟。
+      # 报告写进 Step Summary(ci_run_matrix 里做),失败现场当 artifact 留档。
+      - name: Boot emulator (API 35, google_apis)
+        run: |
+          set -e
+          SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          IMG="system-images;android-35;google_apis;x86_64"
+          echo "SDK=$SDK"
+          "$SDK/emulator/emulator" -accel-check || true
+          # 必须是 google_apis(不是 playstore)镜像:矩阵靠 adb root 直接读设备库
+          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --install "$IMG" "emulator" "platform-tools" > /dev/null
+          echo no | "$SDK/cmdline-tools/latest/bin/avdmanager" create avd -n e2e -k "$IMG" --force
+          # 无窗口 + 软件渲染:CI runner 没有 GPU;KVM 有就用(-accel auto)
+          nohup "$SDK/emulator/emulator" -avd e2e -no-window -no-audio -no-boot-anim \
+            -no-snapshot -gpu swiftshader_indirect > emulator.log 2>&1 &
+          ADB_BIN="$SDK/platform-tools/adb"
+          "$ADB_BIN" wait-for-device
+          for i in $(seq 1 90); do
+            [ "$("$ADB_BIN" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ] && break
+            sleep 5
+          done
+          echo "boot_completed=$("$ADB_BIN" shell getprop sys.boot_completed | tr -d '\r') api=$("$ADB_BIN" shell getprop ro.build.version.sdk | tr -d '\r')"
+
+      - name: E2E matrix (29 scenarios on the release APK)
+        run: |
+          # 用 runner 的 ANDROID_HOME 定位 adb(脚本也会自己找 PATH,这里显式给一份更稳)
+          export ADB="${ANDROID_HOME:-/usr/local/lib/android/sdk}/platform-tools/adb"
+          python3 verify/ci_run_matrix.py \
+            --apk "dist/FreebuffMobile-${{ steps.rel.outputs.version_label }}-release.apk"
+
+      # 失败时最有用的就是现场:每个 FAIL 场景的截图 + 那一轮 ChatViewModel 日志
+      - name: Upload matrix artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-matrix
+          path: |
+            android/verify/matrix_report.md
+            android/verify/matrix_state.jsonl
+            android/verify/mock_matrix.log
+            android/verify/fail_*.png
+            android/verify/fail_*.log
+            android/emulator.log
+          if-no-files-found: warn
 
       - name: Create GitHub Release
         # 干跑不发 Release(发布不可撤销),其余步骤与正式发版完全一致

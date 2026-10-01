@@ -16,4 +16,19 @@ keystore.properties
 *.iml
 .DS_Store
 Thumbs.db
-android/verify/
+# 本地验证工装:产物(截图/日志/DB 快照/备份)一律不入库,
+# 只放行端到端矩阵那一套脚本 —— 发版工作流(.github/workflows/release.yml)要调用它们。
+android/verify/*
+!android/verify/adbenv.py
+!android/verify/ci_bootstrap.py
+!android/verify/ci_run_matrix.py
+!android/verify/dbdump.py
+!android/verify/dbexec.py
+!android/verify/flow.py
+!android/verify/ime.py
+!android/verify/matrix.py
+!android/verify/mock_matrix.py
+!android/verify/make_tls_cert.py
+!android/verify/mock_matrix_tls.py
+# 注意:TLS 自签证书本身**不入库** —— 它有有效期(入库等于给发版埋一个「某天突然 TLS 失败」的雷),
+# 私钥也不该进仓库。缺证书时 mock_matrix_tls 会自动调 make_tls_cert.py 生成。

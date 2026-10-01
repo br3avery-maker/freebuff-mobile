@@ -31,6 +31,7 @@ git tag -a v1.2.0 -m "v1.2.0: 一句话说明" && git push origin v1.2.0
 - **包自证**:发版前会验产物的签名证书与包内 `versionName`/`versionCode`(与 `version.properties` 必须一致,不一致直接失败);
   用的是 debug 证书时在日志里给出显式告警,并把提示写进 Release 说明 —— 避免「以为发的是正式签名包」。
 - **重复标签保护**:同一标签推送两次,第二次在创建 Release 时报「已存在」而失败,属预期保护;要重发需先删标签与 Release。
+- **发版前过端到端矩阵**:创建 Release 之前先在模拟器上对**这个刚打出来的 APK**跑完 29 个场景,有 FAIL 直接失败(不发版);报告进 Step Summary、现场进 `e2e-matrix` artifact。详见 0.3。
 - 该工作流不跑 lint(与 CI 分工:CI 管 PR/分支质量门禁,Release 管出包),签名规则见第 4 节 —— 未配置 `keystore.properties`(CI 上即 Secrets 未注入)时出 debug 证书签名的包。
 
 ### 0.1 干跑:不打正式标签先验一遍
@@ -111,6 +112,38 @@ python3 scripts/update-manifest.py 1.2.0 --prev v1.1.0 --release-notes   # 可�
 
 - **不要手工把清单版本改得比 `version.properties` 更高**:那会让所有用户看到「有新版本」却永远装不上,
   CI 会直接拦下;补发旧标签时脚本也会拒绝把清单降级。
+
+### 0.3 端到端矩阵门禁(发版前必过)
+
+单测过的是策略,矩阵过的是「装上去、点下去到底什么反应」。发版工作流在**创建 Release 之前**先在模拟器上
+对刚打出来的那个 APK 跑完 29 个场景 —— 不重新构建、也不从 Release 下载,所以不存在「测的包 ≠ 发的包」;
+**有 FAIL 就直接失败,不发 Release**。干跑同样会跑这一关(干跑的定位就是「同一条链先走一遍」)。
+
+跑的内容就是 `verify/matrix.py` 的 `CASES`:流式适配(空参数/并行调用/多行帧/坏参修复/错误帧/遗留
+`function_call`/思考参数/端点拒 tools)、循环与体验(进度播报要提醒续跑、未知工具、工具报错、重复调用复用、
+30 轮上限)、失败态(500 重试/401/流中断/空回复/思考参数被拒/合并处方),以及**杀进程三连**(流开即杀、
+半途正文杀、确认弹窗等待时杀 → 冷启动自动修复 + 幂等 + 界面无陈旧步骤)。服务端断言落在
+`verify/mock_matrix.log`,设备端落库断言汇成 `verify/matrix_report.md`。
+
+报告去向:完整表格贴进 **Step Summary**;`e2e-matrix` artifact 里留报告、状态清单、mock 日志,
+以及每个 FAIL 场景的**截图 + 那一轮 `ChatViewModel` 日志**(`verify/fail_<场景>.png|log`)。
+
+本地复现(与 CI 同一条命令,模拟器已起即可):
+
+```bash
+cd android
+python verify/ci_run_matrix.py --apk dist/FreebuffMobile-0.0.3-release.apk
+# 本地迭代:复用已装的包 / 已配好的模型,省掉装机与引导那两分钟
+python verify/ci_run_matrix.py --apk dist/FreebuffMobile-0.0.3-release.apk --skip-install --skip-bootstrap
+```
+
+CI 上的三个硬前提(都是踩过才有结论的):
+
+- 镜像必须是 **google_apis**(不能是 playstore):矩阵靠 `adb root` 直接读设备库核对落库内容。
+- release 包未声明明文流量,`http://10.0.2.2:8899` 会被系统直接拦掉 —— 所以 mock 包一层自签 TLS
+  (`verify/mock_matrix_tls.py` + `verify/tls/`),模型侧打开「跳过 TLS 证书校验」(产品自带的开关)。
+- 全新安装得先被带到「能用」的状态(访客模式 + 建好自定义模型并选中),由 `verify/ci_bootstrap.py`
+  走 UI 完成 —— 模型记录里的 API Key 是 Keystore 加密的,库外写不进去;这条路径顺带就是新手引导的回归。
 
 ## 1. 工具链
 

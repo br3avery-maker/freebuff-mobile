@@ -124,6 +124,10 @@ sealed interface ApiResult<out T> {
 矩阵支持断点续跑:结果逐场景落 `verify/matrix_state.jsonl`(进程被杀不丢进度),全量重跑时已 PASS 的直接沿用、
 只补没过的;点名场景永远实跑,`--fresh` 全部重跑。长会话回归见 `verify/longsession.py`(结果见 `docs/context-engineering.md` §5)。
 
+同一套脚本也是**发版门禁**:`verify/ci_run_matrix.py` 负责装机(sha256 自证设备上那份就是待测产物)→ 起 TLS mock →
+`verify/ci_bootstrap.py` 把全新安装带到可跑状态(访客模式 + 自定义模型并选中)→ 跑矩阵 → 报告进 Step Summary;
+有 FAIL 就不发 Release(见 `docs/build-and-release.md` §0.3)。
+
 #### 3.3.4 回合循环与对话体验(全部由真机实测暴露,规则写在 `core:model`)
 
 延续策略在 `AgentLoop`(纯函数),状态牌/文案在 `MsgSteps`,正文清洗在 `OutputSanitizer`。
