@@ -236,7 +236,12 @@ jobs:
           # 必须是 google_apis(不是 playstore)镜像:矩阵靠 adb root 直接读设备库
           # runner 镜像只带 SDK,不带 emulator —— 先装再校验
           (yes || true) | "$SDK/cmdline-tools/latest/bin/sdkmanager" --install "$IMG" "emulator" "platform-tools" > /dev/null
-          echo no | "$SDK/cmdline-tools/latest/bin/avdmanager" create avd -n e2e -k "$IMG" --force
+          # 必须带 -d:不带设备配置时 AVD 是个极小的默认屏,设置页布局与真机不同,
+          # 引导滚不到「自定义模型」那一行(实测踩到)。pixel_5 = 1080x2340,与本机一致。
+          if ! echo no | "$SDK/cmdline-tools/latest/bin/avdmanager" create avd -n e2e -k "$IMG" -d pixel_5 --force; then
+            echo "::warning::-d pixel_5 不可用,退回默认设备配置(布局可能与真机不同)"
+            echo no | "$SDK/cmdline-tools/latest/bin/avdmanager" create avd -n e2e -k "$IMG" --force
+          fi
           # 自证 AVD 真的建出来了:查不到就当场失败,别拖到 wait-for-device 去挂死
           if ! "$SDK/emulator/emulator" -list-avds | grep -qx e2e; then
             echo "::error::AVD e2e 没建出来(avdmanager 与 emulator 的 AVD 目录不一致?)"
