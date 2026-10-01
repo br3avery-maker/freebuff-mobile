@@ -227,21 +227,44 @@ jobs:
           set -e
           SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           IMG="system-images;android-35;google_apis;x86_64"
-          echo "SDK=$SDK"
-          "$SDK/emulator/emulator" -accel-check || true
+          # AVD 目录显式钉死:avdmanager 建 AVD 与 emulator 找 AVD **必须看同一个地方**,
+          # 否则会出现「建好了却报 Unknown AVD name [e2e]」这种静默失败(实测踩到过)。
+          export ANDROID_AVD_HOME="$HOME/.android/avd"
+          export ANDROID_USER_HOME="$HOME/.android"
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo "SDK=$SDK ANDROID_AVD_HOME=$ANDROID_AVD_HOME"
           # 必须是 google_apis(不是 playstore)镜像:矩阵靠 adb root 直接读设备库
-          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --install "$IMG" "emulator" "platform-tools" > /dev/null
+          # runner 镜像只带 SDK,不带 emulator —— 先装再校验
+          (yes || true) | "$SDK/cmdline-tools/latest/bin/sdkmanager" --install "$IMG" "emulator" "platform-tools" > /dev/null
           echo no | "$SDK/cmdline-tools/latest/bin/avdmanager" create avd -n e2e -k "$IMG" --force
-          # 无窗口 + 软件渲染:CI runner 没有 GPU;KVM 有就用(-accel auto)
+          # 自证 AVD 真的建出来了:查不到就当场失败,别拖到 wait-for-device 去挂死
+          if ! "$SDK/emulator/emulator" -list-avds | grep -qx e2e; then
+            echo "::error::AVD e2e 没建出来(avdmanager 与 emulator 的 AVD 目录不一致?)"
+            ls -la "$ANDROID_AVD_HOME" 2>&1 || true
+            exit 1
+          fi
+          "$SDK/emulator/emulator" -accel-check || true
+          # 无窗口 + 软件渲染:CI runner 没有 GPU;有 KVM 会走默认加速
           nohup "$SDK/emulator/emulator" -avd e2e -no-window -no-audio -no-boot-anim \
             -no-snapshot -gpu swiftshader_indirect > emulator.log 2>&1 &
           ADB_BIN="$SDK/platform-tools/adb"
-          "$ADB_BIN" wait-for-device
+          # 每一步都有硬超时:模拟器起不来要**快速失败并打印原因**,
+          # 而不是让 wait-for-device 无超时地把整个 job 挂上 45 分钟(实测踩到过)。
+          if ! timeout 300 "$ADB_BIN" wait-for-device; then
+            echo "::error::模拟器 300s 内没有可用的 adb 设备"
+            tail -60 emulator.log || true
+            exit 1
+          fi
           for i in $(seq 1 90); do
             [ "$("$ADB_BIN" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ] && break
             sleep 5
           done
-          echo "boot_completed=$("$ADB_BIN" shell getprop sys.boot_completed | tr -d '\r') api=$("$ADB_BIN" shell getprop ro.build.version.sdk | tr -d '\r')"
+          if [ "$("$ADB_BIN" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" != "1" ]; then
+            echo "::error::模拟器 450s 内没有 boot_completed"
+            tail -60 emulator.log || true
+            exit 1
+          fi
+          echo "boot_completed=1 api=$("$ADB_BIN" shell getprop ro.build.version.sdk | tr -d '\r')"
 
       - name: E2E matrix (29 scenarios on the release APK)
         run: |
