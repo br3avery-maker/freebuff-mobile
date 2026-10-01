@@ -243,7 +243,22 @@ jobs:
             ls -la "$ANDROID_AVD_HOME" 2>&1 || true
             exit 1
           fi
-          "$SDK/emulator/emulator" -accel-check || true
+          # KVM:GitHub runner 上 /dev/kvm 存在,但 runner 用户不在 kvm 组 ——
+          # 不放开权限,x86_64 镜像会直接以「requires hardware acceleration」退出(实测踩到)。
+          if [ -e /dev/kvm ]; then
+            sudo chmod 666 /dev/kvm || true
+          fi
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules > /dev/null || true
+          sudo udevadm control --reload-rules || true
+          sudo udevadm trigger --name-match=kvm || true
+          ls -l /dev/kvm || true
+          # 自证加速真的可用:不可用就直接失败,别等到 wait-for-device 才发现
+          if ! "$SDK/emulator/emulator" -accel-check 2>&1 | grep -q "is installed and usable"; then
+            echo "::error::模拟器没有硬件加速(KVM 不可用)—— 这个 runner 跑不了矩阵门禁"
+            "$SDK/emulator/emulator" -accel-check 2>&1 || true
+            exit 1
+          fi
+          "$SDK/emulator/emulator" -accel-check
           # 无窗口 + 软件渲染:CI runner 没有 GPU;有 KVM 会走默认加速
           nohup "$SDK/emulator/emulator" -avd e2e -no-window -no-audio -no-boot-anim \
             -no-snapshot -gpu swiftshader_indirect > emulator.log 2>&1 &
