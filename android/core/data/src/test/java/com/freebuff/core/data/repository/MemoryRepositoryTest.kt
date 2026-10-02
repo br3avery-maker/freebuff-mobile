@@ -120,7 +120,7 @@ class MemoryRepositoryTest {
     fun `applySave 空 block 返回错误文案`() = runTest {
         val repo = MemoryRepository(FakeDao())
         val r = repo.applySave("", "内容", replace = true)
-        assertTrue(r.contains("Failed"))
+        assertTrue(r.contains("Could not save: missing block argument"))
     }
 
     @Test

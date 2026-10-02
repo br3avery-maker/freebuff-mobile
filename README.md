@@ -6,7 +6,7 @@ To try an English APK, open this fork's **Actions → Android CI**, select a suc
 
 For an OpenAI-compatible provider, use **Explore first (guest mode) → Settings → Custom models → Add custom model**. Enter a display name, Base URL, API key, and the provider's exact Model ID, then test and save. The official gateway and GitHub OAuth still require build-time configuration.
 
-Updates and feedback point to `br3avery-maker/freebuff-mobile`. No upstream APK is advertised by this fork's update manifest.
+Updates and feedback point to `br3avery-maker/freebuff-mobile`. The app reads the `english-ui` update manifest while this PR is unmerged, so it cannot pick up the upstream Chinese APK still advertised by `main`.
 
 ## Upstream documentation
 

@@ -41,7 +41,9 @@ class MemoryTest {
     fun `enforceLimits 超限截断并标注`() {
         val blocks = listOf(MemoryBlock("user", "a".repeat(1000), charLimit = 100))
         val limited = MemoryCodec.enforceLimits(blocks)
-        assertTrue(limited[0].content.length <= 100 + 30) // 截断 + 标注
+        assertTrue(limited[0].content.length <= 100 + 50) // Retained text + English truncation notice
+        assertEquals("a".repeat(100), limited[0].content.substringBefore('\n'))
+        assertTrue(limited[0].content.contains("Truncated"))
         assertTrue(limited[0].content.contains("save_memory"))
     }
 

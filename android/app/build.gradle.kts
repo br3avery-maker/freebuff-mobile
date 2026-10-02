@@ -49,10 +49,11 @@ fun configValue(propKey: String, envKey: String): String =
 
 val gatewayBaseUrl = configValue("freebuff.gatewayBaseUrl", "FREEBUFF_GATEWAY_BASE_URL")
 val githubClientId = configValue("freebuff.githubOauthClientId", "FREEBUFF_GITHUB_OAUTH_CLIENT_ID")
-// 更新源默认值:本仓库(公开)的 dist/update.json —— 每次发版由 release.yml 自动刷新并回推 main,
-// 匿名可读,无需任何密钥。要换成自建地址时设 freebuff.updateUrl / FREEBUFF_UPDATE_URL。
+// Use this fork's English channel while the PR is unmerged. The main branch still
+// carries the upstream manifest, including a link to the Chinese APK.
+// Override with freebuff.updateUrl / FREEBUFF_UPDATE_URL for a custom channel.
 val updateUrl = configValue("freebuff.updateUrl", "FREEBUFF_UPDATE_URL")
-    .ifBlank { "https://raw.githubusercontent.com/br3avery-maker/freebuff-mobile/main/dist/update.json" }
+    .ifBlank { "https://raw.githubusercontent.com/br3avery-maker/freebuff-mobile/english-ui/dist/update.json" }
 
 android {
     namespace = "com.freebuff.mobile"
