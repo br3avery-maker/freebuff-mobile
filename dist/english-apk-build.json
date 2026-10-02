@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "built_at_utc": "2026-10-02T13:31:38.889603+00:00",
+  "repository": "br3avery-maker/freebuff-mobile",
+  "branch": "english-ui",
+  "source_commit": "82b870656519c0355c080c1dc5a778c2cc0d190c",
+  "artifact": {
+    "name": "FreebuffMobile-0.0.4-English.apk",
+    "size_bytes": 1489130,
+    "sha256": "22ab1e6ad98f4a6038dd7be1c5fe15a4e3a3eca64f89fe7e3d9426b87a7a24e7",
+    "download_url": "https://drive.google.com/file/d/1PYwpgTgFQkcHjDsExL-AYJPdVs4L7xUZ/view?usp=drivesdk",
+    "download_access": "Connected Google Drive account; owner-only permission",
+    "download_bytes_verified_against_local_apk": true,
+    "application_id": "com.freebuff.mobile",
+    "application_label": "Freebuff Mobile English",
+    "version_name": "0.0.4",
+    "version_code": 5,
+    "min_sdk": 26,
+    "target_sdk": 35,
+    "debuggable": false
+  },
+  "signing": {
+    "kind": "Android debug certificate fallback",
+    "apk_v2_signature_verified": true,
+    "certificate_sha256": "9ac04a97b2770f786058324607d8c54e52fdb1c7559f06baf8a99433e95a4acd"
+  },
+  "toolchain": {
+    "java": "Temurin 17.0.20.1",
+    "gradle": "8.9",
+    "compile_sdk": 35,
+    "build_tools": "35.0.0"
+  },
+  "checks": {
+    "core:model:test": {
+      "status": "passed",
+      "tests": 188,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "core:data:testDebugUnitTest": {
+      "status": "passed",
+      "tests": 216,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "lintDebug": {
+      "status": "passed",
+      "errors": 0,
+      "warnings_by_module": {
+        "app": {
+          "Warning": 48
+        },
+        "core/ui": {
+          "Warning": 2
+        },
+        "core/data": {
+          "Warning": 3
+        },
+        "feature/chat": {
+          "Warning": 14
+        },
+        "feature/auth": {
+          "Warning": 2
+        },
+        "feature/settings": {
+          "Warning": 2
+        }
+      }
+    },
+    "app:assembleRelease": {
+      "status": "passed",
+      "r8": true,
+      "resource_shrinking": true
+    }
+  },
+  "full_gradle_command": "./gradlew :core:model:test :core:data:testDebugUnitTest lintDebug :app:assembleRelease --no-daemon --stacktrace --max-workers=1 -Dorg.gradle.jvmargs=\"-Xmx1024m -XX:MinHeapFreeRatio=10 -XX:MaxHeapFreeRatio=20 -Dfile.encoding=UTF-8\" -Pkotlin.compiler.execution.strategy=in-process",
+  "full_gradle_command_result": "BUILD SUCCESSFUL",
+  "apk_zip_integrity_verified": true,
+  "english_screen_and_update_channel_strings_verified_in_dex": true,
+  "update_manifest_check": "passed",
+  "english_update_manifest_url": "https://raw.githubusercontent.com/br3avery-maker/freebuff-mobile/english-ui/dist/update.json",
+  "device_or_emulator_matrix_run": false,
+  "live_custom_provider_tested": false,
+  "github_release_created": false,
+  "pr_merged": false,
+  "delivery_note": "GitHub large binary blob upload did not complete; the exact signed APK was uploaded to Drive and read back byte-for-byte.",
+  "verified_at_utc": "2026-10-02T14:29:33.508875+00:00"
+}
