@@ -41,22 +41,22 @@ fun WelcomeScreen(viewModel: WelcomeViewModel = hiltViewModel()) {
             Text(">_", color = t.accent, fontSize = 30.sp, fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.height(20.dp))
-        Text("把想法,交给", color = t.text, fontSize = 27.sp, fontWeight = FontWeight.Bold)
+        Text("Bring your ideas to", color = t.text, fontSize = 27.sp, fontWeight = FontWeight.Bold)
         Text("Freebuff", color = t.accent, fontSize = 27.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(10.dp))
-        Text("官方安卓 App · 一个随身携带的编码 Agent:会规划、会改代码、会解释,并且完全免费。",
+        Text("An Android coding assistant in your pocket: plan, work with code, and explain each step.",
             color = t.text2, fontSize = 13.5.sp, lineHeight = 21.sp, textAlign = TextAlign.Center)
         Spacer(Modifier.height(28.dp))
-        FeatureRow("多个前沿模型,无需订阅或 API Key")
-        FeatureRow("Agent 自动规划、执行并解释每一步")
-        FeatureRow("会话本地保存 · 随时离线可用")
+        FeatureRow("Use built-in models with a configured gateway, or add your own API endpoint")
+        FeatureRow("The agent plans, runs tools, and explains each step")
+        FeatureRow("Chats saved locally · Read them offline anytime")
         Spacer(Modifier.weight(1f))
-        PrimaryBtn("登录 Freebuff 账号") { viewModel.enter(signedIn = true) }
+        PrimaryBtn("Sign in to Freebuff") { viewModel.enter(signedIn = true) }
         Spacer(Modifier.height(10.dp))
-        Text("先逛逛(访客模式)", color = t.text3, fontSize = 14.sp,
+        Text("Explore first (guest mode)", color = t.text3, fontSize = 14.sp,
             modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable { viewModel.enter(signedIn = false) }.padding(12.dp))
         Spacer(Modifier.height(8.dp))
-        Text("访客模式 · 数据仅存于本机", color = t.text3, fontSize = 11.sp,
+        Text("Guest mode · Data stays on this device", color = t.text3, fontSize = 11.sp,
             modifier = Modifier.padding(bottom = 24.dp))
     }
 }

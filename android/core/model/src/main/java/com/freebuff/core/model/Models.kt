@@ -180,8 +180,8 @@ fun List<CustomModel>.asOfficialModels(): List<OfficialModel> = map { m ->
         name = m.name,
         badge = "M",
         tier = "custom",
-        tierText = "自定义模型",
-        desc = m.base.ifBlank { "自定义端点" },
+        tierText = "Custom models",
+        desc = m.base.ifBlank { "Custom endpoint" },
     )
 }
 

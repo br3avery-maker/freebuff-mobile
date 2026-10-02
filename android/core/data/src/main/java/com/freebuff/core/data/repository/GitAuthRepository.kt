@@ -95,13 +95,13 @@ class RealGitAuthRepository @Inject constructor(
                     is DevicePoll.SlowDown -> interval = v.intervalSec.coerceAtLeast(1)
                     DevicePoll.Pending -> Unit
                     is DevicePoll.Denied -> {
-                        emit(GitConnectStep.Failed("授权失败:" + v.reason))
+                        emit(GitConnectStep.Failed("Authorization failed: " + v.reason))
                         return@flow
                     }
                 }
             }
         }
-        emit(GitConnectStep.Failed("授权超时,请重新发起"))
+        emit(GitConnectStep.Failed("Authorization timed out. Please start again."))
     }
 
     override suspend fun revoke() {
@@ -111,7 +111,7 @@ class RealGitAuthRepository @Inject constructor(
 
     override suspend fun repos(): ApiResult<List<RepoItem>> {
         val token = readToken()
-        if (token.isBlank()) return ApiResult.Err(ApiError.NotConfigured("Git 账号授权"))
+        if (token.isBlank()) return ApiResult.Err(ApiError.NotConfigured("Git account authorization"))
         return github.repos(token)
     }
 

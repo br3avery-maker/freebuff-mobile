@@ -25,7 +25,7 @@ class SilentRetryTest {
         var calls = 0
         val r = silentRetry(attempts = 3, baseDelayMs = 1L) {
             calls++
-            ApiResult.Err(ApiError.NotConfigured("更新源地址"))
+            ApiResult.Err(ApiError.NotConfigured("Update source URL"))
         }
         assertTrue(r is ApiResult.Err)
         assertEquals(1, calls)

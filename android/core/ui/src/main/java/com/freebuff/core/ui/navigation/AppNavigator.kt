@@ -57,5 +57,5 @@ interface AppNavigator {
 }
 
 val LocalAppNavigator = staticCompositionLocalOf<AppNavigator> {
-    error("LocalAppNavigator 未提供:请在 app 根节点注入 AppNavigator")
+    error("LocalAppNavigator not provided: inject AppNavigator at the app root")
 }

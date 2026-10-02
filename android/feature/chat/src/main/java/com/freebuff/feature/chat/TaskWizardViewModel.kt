@@ -130,7 +130,7 @@ class TaskWizardViewModel @Inject constructor(
                     else -> true
                 }
                 if (ok) _draft.update { it.copy(step = 1) }
-                else navigator.showSnack(if (d.repoMode == "git") "请先选择一个仓库" else "仓库地址不完整")
+                else navigator.showSnack(if (d.repoMode == "git") "Choose a repository first" else "Incomplete repository URL")
             }
             else -> _draft.update { it.copy(step = (it.step + 1).coerceAtMost(2)) }
         }
@@ -143,11 +143,11 @@ class TaskWizardViewModel @Inject constructor(
     fun launch(onLaunched: (sessionId: String, desc: String, ctxRepo: String, ctxModel: String) -> Unit) {
         val d = _draft.value
         if (d.desc.isBlank()) {
-            navigator.showSnack("请先描述任务")
+            navigator.showSnack("Describe the task first")
             return
         }
         if (d.desc.length > DESC_MAX) {
-            navigator.showSnack("任务描述不能超过 " + DESC_MAX + " 字")
+            navigator.showSnack("Task description cannot exceed " + DESC_MAX + " characters")
             return
         }
         // 快速双击守卫:提交中有挂起点,不加锁会创建两个会话
@@ -163,7 +163,7 @@ class TaskWizardViewModel @Inject constructor(
                 // 把向导所选模型写回设置,首条对话按此模型真实请求。
                 // 没有选过模型时不写:否则会把空/无效 id 盖掉设置里已选好的模型。
                 if (d.modelId.isNotBlank()) settings.setModelId(d.modelId)
-                val s = sessionRepo.create("新对话")
+                val s = sessionRepo.create("New chat")
                 val desc = d.desc
                 // 重置草稿但保留刚用过的模型:下次开向导仍默认同一个模型
                 _draft.value = TaskDraft(modelId = d.modelId)

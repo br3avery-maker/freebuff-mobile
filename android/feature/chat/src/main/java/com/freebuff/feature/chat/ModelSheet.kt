@@ -41,33 +41,33 @@ fun ModelSheet(viewModel: ChatViewModel = hiltViewModel()) {
     val gatewayConfigured = viewModel.gatewayConfigured
     val official = all.filter { it.tier != "custom" }
     val customs = all.filter { it.tier == "custom" }
-    SheetScaffold("选择模型", "官方模型与你的自定义模型") {
+    SheetScaffold("Choose a model", "Built-in and custom models") {
         LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
             item {
                 Row(verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp)) {
                     Text(
                         when {
-                            !gatewayConfigured -> "官方模型 · 未配置网关"
-                            catalogLoaded -> "官方模型 · 网关实时"
-                            else -> "官方模型 · 尚未拉取"
+                            !gatewayConfigured -> "Built-in models · Gateway not configured"
+                            catalogLoaded -> "Built-in models · Live gateway catalog"
+                            else -> "Built-in models · Not loaded yet"
                         },
                         color = if (catalogError != null || !gatewayConfigured) t.warn else t.text3,
                         fontSize = 11.5.sp, fontWeight = FontWeight.Medium,
                         modifier = Modifier.weight(1f),
                     )
                     if (gatewayConfigured) {
-                        Text("刷新", color = t.accent, fontSize = 11.5.sp, fontWeight = FontWeight.Bold,
+                        Text("Refresh", color = t.accent, fontSize = 11.5.sp, fontWeight = FontWeight.Bold,
                             modifier = Modifier.clip(RFull).clickable { viewModel.refreshCatalog() }
                                 .padding(horizontal = 10.dp, vertical = 4.dp))
                     }
                 }
                 if (!gatewayConfigured) {
-                    Text("本次构建未配置官方网关,官方模型不可用;添加自定义模型即可使用。",
+                    Text("This build has no built-in gateway configured. Add a custom model to get started.",
                         color = t.text3, fontSize = 11.sp, lineHeight = 15.sp,
                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
                 } else if (catalogError != null) {
-                    Text("目录拉取失败:" + catalogError, color = t.warn, fontSize = 11.sp,
+                    Text("Could not load catalog: " + catalogError, color = t.warn, fontSize = 11.sp,
                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
                 }
             }
@@ -81,10 +81,10 @@ fun ModelSheet(viewModel: ChatViewModel = hiltViewModel()) {
                     },
                 )
             }
-            item { Text("我的模型", color = t.text3, fontSize = 11.5.sp, fontWeight = FontWeight.Medium,
+            item { Text("My models", color = t.text3, fontSize = 11.5.sp, fontWeight = FontWeight.Medium,
                 modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 18.dp, bottom = 6.dp)) }
             if (customs.isEmpty()) {
-                item { Text("还没有自定义模型,可在 设置 → 自定义模型 中添加", color = t.text3, fontSize = 12.sp,
+                item { Text("No custom models yet. Add one in Settings → Custom models.", color = t.text3, fontSize = 12.sp,
                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp)) }
             } else {
                 items(customs, key = { it.id }) { m ->
@@ -114,7 +114,7 @@ private fun ModelRow(m: OfficialModel, on: Boolean, onClick: () -> Unit) {
             Spacer(Modifier.width(8.dp))
             Text(m.name, color = t.text, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f))
-            if (on) Text("当前", color = t.accent, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+            if (on) Text("Current", color = t.accent, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
         }
         Text(m.tierText + " · " + m.desc, color = t.text3, fontSize = 11.5.sp,
             modifier = Modifier.padding(top = 4.dp, start = 2.dp))

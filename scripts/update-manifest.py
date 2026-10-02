@@ -46,7 +46,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = REPO_ROOT / "dist" / "update.json"
 VERSION_PROPS = REPO_ROOT / "android" / "version.properties"
-FALLBACK_SLUG = "doubao01/freebuff-mobile"
+FALLBACK_SLUG = "br3avery-maker/freebuff-mobile"
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 APK_ASSET = "FreebuffMobile-{label}-release.apk"

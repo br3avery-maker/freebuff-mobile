@@ -89,7 +89,7 @@ class MemoryRepositoryTest {
         val repo = MemoryRepository(FakeDao())
         repo.load()
         val r = repo.applySave("user", "喜欢中文", replace = true)
-        assertTrue(r.contains("已保存"))
+        assertTrue(r.contains("Saved to"))
         val blocks = repo.load()
         assertEquals("喜欢中文", blocks.first { it.name == "user" }.content)
     }
@@ -100,7 +100,7 @@ class MemoryRepositoryTest {
         repo.load()
         repo.applySave("project", "A".repeat(500), replace = true)
         val r = repo.applySave("project", "B".repeat(200), replace = false)
-        assertTrue(r.contains("已保存"))
+        assertTrue(r.contains("Saved to"))
         val content = repo.load().first { it.name == "project" }.content
         assertTrue("追加段应在末尾", content.trimEnd().endsWith("BBB"))
         assertTrue("应保留头部", content.startsWith("A"))
@@ -112,7 +112,7 @@ class MemoryRepositoryTest {
         repo.load()
         repo.applySave("user", "临时", replace = true)
         val r = repo.applySave("user", "  ", replace = true)
-        assertTrue(r.contains("已清空"))
+        assertTrue(r.contains("Cleared memory"))
         assertTrue(repo.load().none { it.name == "user" })
     }
 
@@ -120,7 +120,7 @@ class MemoryRepositoryTest {
     fun `applySave 空 block 返回错误文案`() = runTest {
         val repo = MemoryRepository(FakeDao())
         val r = repo.applySave("", "内容", replace = true)
-        assertTrue(r.contains("失败"))
+        assertTrue(r.contains("Failed"))
     }
 
     @Test

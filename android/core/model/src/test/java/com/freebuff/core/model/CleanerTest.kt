@@ -56,7 +56,7 @@ class CleanerTest {
     @Test
     fun `名称为空补全未命名模型`() {
         val (out, rep) = sanitizeCustomModels(listOf(model(name = "  ")))
-        assertEquals("未命名模型", out[0].name)
+        assertEquals("Unnamed model", out[0].name)
         assertEquals(1, rep.fixed)
         assertTrue(rep.items[0].fixes.any { it.code == "name" })
     }

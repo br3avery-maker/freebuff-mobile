@@ -82,9 +82,9 @@ class DataMigratorTest {
         val dao = MemDao()
         // 旧版首启灌入的演示会话 + 用户自己的一条真实会话
         DataMigrator.LEGACY_DEMO_SESSION_IDS.forEach { id ->
-            dao.sessions[id] = SessionEntity(id, "演示", "刚刚", "", 0L)
+            dao.sessions[id] = SessionEntity(id, "演示", "Just now", "", 0L)
         }
-        dao.sessions["s7f3k2"] = SessionEntity("s7f3k2", "真实会话", "刚刚", "", 1L)
+        dao.sessions["s7f3k2"] = SessionEntity("s7f3k2", "真实会话", "Just now", "", 1L)
 
         DataMigrator(dao, IdentityCrypto()).migrate(prefs)
 
@@ -92,7 +92,7 @@ class DataMigratorTest {
 
         // 只清一次:用户之后手动删除同 id 会话不会被再触发(标志已置位)
         assertTrue(prefs.getBoolean(DataMigrator.KEY_DEMO_PURGED, false))
-        dao.sessions["s1"] = SessionEntity("s1", "用户自建", "刚刚", "", 2L)
+        dao.sessions["s1"] = SessionEntity("s1", "用户自建", "Just now", "", 2L)
         DataMigrator(dao, IdentityCrypto()).migrate(prefs)
         assertEquals(2, dao.sessions.size)
     }

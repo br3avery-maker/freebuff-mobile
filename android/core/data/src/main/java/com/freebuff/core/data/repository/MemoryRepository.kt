@@ -41,20 +41,20 @@ class MemoryRepository @Inject constructor(
      */
     suspend fun applySave(block: String, content: String, replace: Boolean): String {
         val name = block.trim()
-        if (name.isEmpty()) return "保存失败:缺少 block 参数"
+        if (name.isEmpty()) return "Could not save: missing block argument"
         if (content.isBlank()) {
             dao.deleteMemory(name)
-            return "已清空记忆块「$name」"
+            return "Cleared memory block “$name”"
         }
         val cur = dao.allMemories().firstOrNull { it.block == name }
         val newContent = if (replace || cur == null) content
         else (cur.content + "\n" + content).let { c ->
             // 追加超出限额时压缩:保留头部 + 追加段
             val limit = cur.charLimit
-            if (c.length > limit) c.take(limit - 60) + "\n(更早内容已压缩)\n" + content else c
+            if (c.length > limit) c.take(limit - 60) + "\n(Earlier content condensed)\n" + content else c
         }
         dao.upsertMemory(MemoryEntity(name, newContent, cur?.charLimit ?: MemoryBlock.DEFAULT_CHAR_LIMIT, cur?.sort ?: nextSort()))
-        return "已保存到记忆块「$name」(${newContent.length} 字)"
+        return "Saved to memory block “$name” (${newContent.length} characters)"
     }
 
     suspend fun setBlock(block: String, content: String) = applySave(block, content, replace = true)

@@ -32,15 +32,15 @@ fun SessionMenuSheet(sessionId: String, viewModel: HomeViewModel = hiltViewModel
     val sessions by viewModel.sessions.collectAsState()
     val s = sessions.firstOrNull { it.id == sessionId }
     Column(Modifier.padding(horizontal = 6.dp).padding(bottom = 10.dp)) {
-        Text(if (s != null) s.title else "该会话", color = t.text2, fontSize = 12.5.sp,
+        Text(if (s != null) s.title else "this chat", color = t.text2, fontSize = 12.5.sp,
             maxLines = 1, overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(bottom = 12.dp))
-        Text("删除会话", color = t.danger, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold,
+        Text("Delete chat", color = t.danger, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold,
             modifier = Modifier.fillMaxWidth().clip(RFull).clickable {
                 viewModel.deleteSession(sessionId)
                 navigator.closeSheet()
             }.padding(vertical = 11.dp))
-        Text("取消", color = t.text3, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold,
+        Text("Cancel", color = t.text3, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold,
             modifier = Modifier.fillMaxWidth().clip(RFull).clickable { navigator.closeSheet() }
                 .padding(vertical = 11.dp))
     }

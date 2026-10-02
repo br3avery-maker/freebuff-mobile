@@ -13,7 +13,7 @@ class CatalogTest {
         assertEquals(1, models.size)
         assertEquals("Deepseek V4 Flash", models[0].name)
         assertEquals("DEE", models[0].badge)
-        assertEquals("来自官方网关的实时目录", models[0].desc)
+        assertEquals("Live catalog from the built-in gateway", models[0].desc)
     }
 
     @Test

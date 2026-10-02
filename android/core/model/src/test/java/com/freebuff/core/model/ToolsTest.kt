@@ -116,7 +116,7 @@ class ToolsTest {
     @Test
     fun `说明书体积有预算 —— 每轮都会随请求注入`() {
         val json = DefaultTools.toJsonArrayString()
-        assertTrue("说明书里要带示例行", json.contains("例: "))
+        assertTrue("说明书里要带示例行", json.contains("Example: "))
         assertTrue("工具说明书过大(${json.length} 字符),8k 上下文下会挤掉对话", json.length <= 12000)
     }
 

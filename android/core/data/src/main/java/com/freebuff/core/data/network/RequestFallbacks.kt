@@ -27,10 +27,10 @@ object RequestFallbacks {
     }
 
     /** 工具被拒后给用户看的说明。 */
-    const val TOOLS_DROPPED_NOTE = "该端点不接受工具定义,已按纯对话继续(工具/自动多轮不可用)"
+    const val TOOLS_DROPPED_NOTE = "This endpoint rejected tool definitions. Continuing as chat only (tools and automatic multi-step execution unavailable)."
 
     /** 思考参数被拒后给用户看的说明。 */
-    const val REASONING_DROPPED_NOTE = "该端点不支持思考参数,已关闭思考字段继续(思考内容仍会展示)"
+    const val REASONING_DROPPED_NOTE = "This endpoint rejected reasoning parameters. Continuing without those fields (returned reasoning is still displayed)."
 
     private val TOOL_FIELDS = listOf(
         "tools", "tool_choice", "tool_calls", "function calling", "functions",

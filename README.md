@@ -1,3 +1,15 @@
+# Freebuff Mobile — English fork
+
+This fork translates the Android app's menus, forms, tool activity, errors, and agent instructions into English. Chinese input aliases remain accepted. Your chats and model configuration keep their existing format.
+
+To try an English APK, open this fork's **Actions → Android CI**, select a successful run for the `english-ui` branch/PR, and download the `app-release` artifact. Extract the ZIP and install `app-release.apk`. Builds use a debug signing certificate unless you configure your own release keystore; a differently signed existing installation may require uninstalling first, which removes local app data.
+
+For an OpenAI-compatible provider, use **Explore first (guest mode) → Settings → Custom models → Add custom model**. Enter a display name, Base URL, API key, and the provider's exact Model ID, then test and save. The official gateway and GitHub OAuth still require build-time configuration.
+
+Updates and feedback point to `br3avery-maker/freebuff-mobile`. No upstream APK is advertised by this fork's update manifest.
+
+## Upstream documentation
+
 # Freebuff Mobile
 
 为 [CodebuffAI/freebuff](https://github.com/CodebuffAI/freebuff) 规划的**安卓手机客户端**,包含两部分交付物:

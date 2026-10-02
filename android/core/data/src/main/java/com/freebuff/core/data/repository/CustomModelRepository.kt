@@ -92,7 +92,7 @@ class CustomModelRepository internal constructor(
     /** 拉取 {origin}/v1/models 的模型 id 列表。 */
     suspend fun fetchModels(m: CustomModel): ApiResult<List<String>> {
         val url = modelsUrl(m.base)
-        if (url.isEmpty()) return ApiResult.Err(ApiError.NotConfigured("端点地址"))
+        if (url.isEmpty()) return ApiResult.Err(ApiError.NotConfigured("Endpoint URL"))
         return apiCallIo {
             val client = clientFor(m.skipTLS)
             val builder = Request.Builder()
@@ -108,8 +108,8 @@ class CustomModelRepository internal constructor(
                 val arr = try {
                     JSONObject(body).optJSONArray("data")
                 } catch (t: Throwable) {
-                    throw ApiError.Parse("模型列表不是合法 JSON")
-                } ?: throw ApiError.Parse("模型列表缺少 data 字段")
+                    throw ApiError.Parse("Model list is not valid JSON")
+                } ?: throw ApiError.Parse("Model list is missing the data field")
                 (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.optString("id")?.takeIf { s -> s.isNotEmpty() } }
             }
         }
@@ -135,7 +135,7 @@ class CustomModelRepository internal constructor(
             }
             is ApiResult.Err -> {
                 // 连接本身可用,快照未刷新:保留旧数据,仅提示原因
-                m to ProbeResult.Success(result.ms, "连接正常,但模型快照未更新:" + fetched.error.userMessage)
+                m to ProbeResult.Success(result.ms, "Connected, but the model snapshot was not updated: " + fetched.error.userMessage)
             }
         }
     }

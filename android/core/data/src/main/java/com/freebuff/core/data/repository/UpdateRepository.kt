@@ -36,7 +36,7 @@ class UpdateRepository @Inject constructor(
         }
 
     suspend fun check(): ApiResult<RemoteVersion> {
-        if (!isConfigured) return ApiResult.Err(ApiError.NotConfigured("更新源地址"))
+        if (!isConfigured) return ApiResult.Err(ApiError.NotConfigured("Update source URL"))
         return apiCallIo {
             val req = Request.Builder()
                 .url(updateUrl)
@@ -51,10 +51,10 @@ class UpdateRepository @Inject constructor(
                 val o = try {
                     JSONObject(body)
                 } catch (t: Throwable) {
-                    throw ApiError.Parse("版本信息不是合法 JSON")
+                    throw ApiError.Parse("Version information is not valid JSON")
                 }
                 val version = o.optString("version")
-                if (version.isBlank()) throw ApiError.Parse("版本信息缺少 version 字段")
+                if (version.isBlank()) throw ApiError.Parse("Version information is missing the version field")
                 val notes = o.optJSONArray("notes")?.let { arr ->
                     (0 until arr.length()).mapNotNull { arr.optString(it).takeIf { s -> s.isNotEmpty() } }
                 } ?: emptyList()

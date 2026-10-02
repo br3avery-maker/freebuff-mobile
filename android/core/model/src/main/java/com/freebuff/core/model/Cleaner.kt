@@ -26,7 +26,7 @@ fun sanitizeCustomModels(list: List<CustomModel?>): Pair<List<CustomModel>, Repa
         }
         var name = c.name
         if (name.isBlank()) {
-            name = "未命名模型"
+            name = "Unnamed model"
             fixes.add(RepairFix("name", 1))
         }
         var fieldFixes = 0

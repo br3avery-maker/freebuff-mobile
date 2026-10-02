@@ -97,7 +97,7 @@ fun SetRow(
             )
         }
         if (trailing.isNotEmpty()) {
-            val dim = !accent && (trailing == "未连接" || trailing == "未添加")
+            val dim = !accent && (trailing == "Not connected" || trailing == "Not added")
             Text(
                 trailing, color = if (dim) t.text3 else t.accent, fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 8.dp),
@@ -141,7 +141,7 @@ fun ModelChip(modelName: String, onClick: () -> Unit, modifier: Modifier = Modif
         Box(Modifier.size(7.dp).clip(RFull).background(if (picked) t.accent else t.warn))
         Spacer(Modifier.width(6.dp))
         Text(
-            modelName.ifBlank { "选择模型" },
+            modelName.ifBlank { "Choose a model" },
             color = if (picked) t.text2 else t.warn, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold,
             maxLines = 1, overflow = TextOverflow.Ellipsis,
             modifier = Modifier.widthIn(max = 170.dp),
