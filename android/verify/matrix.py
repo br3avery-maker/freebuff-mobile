@@ -365,6 +365,12 @@ def main_ui_shown():
                for x in ui_text())
 
 
+def app_interactive():
+    """App 已经画出可交互界面:主界面,或未登录时的欢迎页(点「先逛逛」就能继续)。"""
+    return any((x or '') == '会话' or ('描述任务…' in (x or '')) or ('例如:' in (x or ''))
+               or ('先逛逛' in (x or '')) for x in ui_text())
+
+
 def relaunch_app(tries=3):
     """冷启动 App,并**确认真回到前台、界面也画出来了**(修复是否重跑、UI 是否可用全看它)。
 
@@ -380,7 +386,7 @@ def relaunch_app(tries=3):
         sh('am', 'start', '-n', main)
         end = time.time() + 30
         while time.time() < end:
-            if app_foreground() and process_alive() and main_ui_shown():
+            if app_foreground() and process_alive() and app_interactive():
                 time.sleep(3.0)   # 首帧稳定 + 等冷启动修复落库(日志/库断言依赖它)
                 return True
             time.sleep(2.0)
@@ -462,14 +468,21 @@ def ensure_chat_screen(prompt=None):
     桌面,后面所有用例都静默打在启动器上。现在:不在前台/进程没了 → 重新拉起;
     界面没画出来 → 等;在列表 → 按提示词/修复文案/会话行几何兜底点开;不按 BACK。
     """
-    for _ in range(4):
+    for _ in range(5):
         if not (app_foreground() and process_alive()):
             relaunch_app()
+            continue
+        t = ui_text()
+        if any('先逛逛' in (x or '') for x in t):
+            # 未登录的访客态:冷启动会回到欢迎页(登录态才直接进主界面)。
+            # CI 实测:没跑 --login 时访客模式跑完 26 例,但第一例 force-stop 之后
+            # 冷启动回欢迎页,kill 三连全卡死 —— 这里兜住,点「先逛逛」继续。
+            tap('先逛逛')
+            time.sleep(3.0)
             continue
         if not main_ui_shown():
             time.sleep(2.0)          # 界面还没画出来,给它一拍
             continue
-        t = ui_text()
         if any(('描述任务…' in (x or '')) or ('例如:' in (x or '')) for x in t):
             return True              # 已经在聊天页
         if prompt and flow.do_tap(prompt, lowest=False, timeout=5.0):
@@ -704,7 +717,8 @@ def wait_main_ui(timeout=60.0):
     end = time.time() + timeout
     while time.time() < end:
         t = ui_text()
-        if any(x == '会话' or ('描述任务…' in (x or '')) or ('例如:' in (x or '')) for x in t):
+        if any(x == '会话' or ('描述任务…' in (x or '')) or ('例如:' in (x or ''))
+               or ('先逛逛' in (x or '')) for x in t):
             return True
         time.sleep(1.0)
     print('!! 主界面等待超时', flush=True)

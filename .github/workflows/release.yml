@@ -300,8 +300,12 @@ jobs:
           export ADB="${ANDROID_HOME:-/usr/local/lib/android/sdk}/platform-tools/adb"
           # 矩阵 FAIL 时也要继续跑下面的现场采集,最后再用原退出码失败本步
           set +e
+          # --login:引导里走「登录 Freebuff 账号」并自证 signedIn 落库。CI 不登录的话
+          # 整套矩阵会跑在访客模式 —— 访客态只在内存里,App 一旦被 force-stop(矩阵的
+          # kill 三连就是干这个),冷启动就回欢迎页,后面的用例全卡在「找不到聊天页」。
           python3 verify/ci_run_matrix.py \
-            --apk "dist/FreebuffMobile-${{ steps.rel.outputs.version_label }}-release.apk"
+            --apk "dist/FreebuffMobile-${{ steps.rel.outputs.version_label }}-release.apk" \
+            --login
           rc=$?
           set -e
           # 「App 拉不起来/掉回桌面」类问题唯一可靠的现场就是崩溃缓冲(logcat 窗口有限,
