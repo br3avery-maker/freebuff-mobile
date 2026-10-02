@@ -16,16 +16,16 @@ class ToolErrorsTest {
     fun `信封是固定形状 带类型标签与处方`() {
         val env = ToolErrors.report(
             ToolErrors.Kind.MISSING_PARAM, "github_get_file",
-            "必填参数 path 没有给", "补上 path 后重试一次。",
+            "Required argument path is missing", "Add path and retry once.",
             example = "github_get_file({\"owner\":\"a\",\"repo\":\"b\",\"path\":\"README.md\"})",
         )
 
         assertTrue("必须能被识别为错误结果", env.startsWith(ToolErrors.MARK))
-        assertTrue("中文名 + 稳定英文标签", env.contains("类型=缺少必填参数/MISSING_PARAM"))
-        assertTrue(env.contains("工具=github_get_file"))
-        assertTrue(env.contains("\n问题: 必填参数 path 没有给"))
-        assertTrue(env.contains("\n怎么改: 补上 path 后重试一次。"))
-        assertTrue("要给出可照抄的调用示例", env.contains("正确调用示例: github_get_file("))
+        assertTrue("中文名 + 稳定英文标签", env.contains("Type=Missing required argument/MISSING_PARAM"))
+        assertTrue(env.contains("Tool=github_get_file"))
+        assertTrue(env.contains("\nProblem: Required argument path is missing"))
+        assertTrue(env.contains("\nHow to fix: Add path and retry once."))
+        assertTrue("要给出可照抄的调用示例", env.contains("Correct call example: github_get_file("))
         assertTrue("第一次失败不该劝退", !env.contains(ToolErrors.ESCALATE))
     }
 
@@ -35,9 +35,9 @@ class ToolErrorsTest {
             ToolErrors.Kind.BAD_VALUE, "calculator",
             "表达式「1+」无法解析", "换一个合法算式重试", attempt = 2,
         )
-        assertTrue(env.contains("第 2 次失败"))
+        assertTrue(env.contains("Attempt 2 failed"))
         assertTrue(env.contains(ToolErrors.ESCALATE))
-        assertTrue("要给出路而不是让它无限重试", env.contains("换参数、换工具"))
+        assertTrue("要给出路而不是让它无限重试", env.contains("Change arguments, choose another tool"))
     }
 
     @Test
@@ -59,15 +59,15 @@ class ToolErrorsTest {
     @Test
     fun `HTTP 状态码分别给出下一步`() {
         assertTrue(ToolErrors.http("web_fetch", 401, "").contains("AUTH"))
-        assertTrue(ToolErrors.http("web_fetch", 403, "").contains("鉴权或权限不足"))
+        assertTrue(ToolErrors.http("web_fetch", 403, "").contains("Authentication or permission required"))
 
         val notFound = ToolErrors.http("github_get_file", 404, "")
         assertTrue(notFound.contains("NOT_FOUND"))
-        assertTrue("404 要提示核对拼写", notFound.contains("拼写"))
+        assertTrue("404 要提示核对拼写", notFound.contains("spelling"))
 
         val limited = ToolErrors.http("web_search", 429, "")
         assertTrue(limited.contains("RATE_LIMIT"))
-        assertTrue("限流要说明别连续重试", limited.contains("不要连续重试"))
+        assertTrue("限流要说明别连续重试", limited.contains("do not retry repeatedly"))
 
         assertTrue(ToolErrors.http("web_search", 503, "").contains("NETWORK"))
 
@@ -85,8 +85,8 @@ class ToolErrorsTest {
                 ToolErrors.ArgProblem.Range("limit", "99", 1, 10),
             ).take(1),
         )
-        assertTrue(env.contains("缺少必填参数"))
-        assertTrue("一次只讲一件事", !env.contains("超出范围"))
+        assertTrue(env.contains("Missing required argument"))
+        assertTrue("一次只讲一件事", !env.contains("outside the allowed range"))
         assertTrue("要给参数名 + 类型清单", env.contains("owner:string"))
         assertTrue("要给可照抄的示例", env.contains(tool.example))
     }
@@ -103,12 +103,12 @@ class ToolErrorsTest {
             ),
         )
         assertTrue("仍然是一条错误结果", env.startsWith(ToolErrors.MARK))
-        assertTrue("问题要逐条编号", env.contains("① 必填参数 path"))
-        assertTrue(env.contains("② 参数名 mode 不存在"))
-        assertTrue(env.contains("③ 参数 limit 的取值"))
-        assertTrue("每条问题都要有对应的改法", env.contains("① 补上 path"))
-        assertTrue(env.contains("② 删掉未声明的参数「mode」"))
-        assertTrue(env.contains("③ limit 取值需在"))
+        assertTrue("问题要逐条编号", env.contains("① Required argument path"))
+        assertTrue(env.contains("② Argument name mode is unknown"))
+        assertTrue(env.contains("③ Argument limit has value"))
+        assertTrue("每条问题都要有对应的改法", env.contains("① Add path"))
+        assertTrue(env.contains("② Remove the undeclared argument “mode”"))
+        assertTrue(env.contains("③ limit must be within"))
         assertTrue("末尾仍要附参数清单", env.contains("owner:string"))
         assertTrue("示例仍要给", env.contains(tool.example))
         assertTrue("类型取最严重的一类", env.contains("MISSING_PARAM"))
@@ -127,7 +127,7 @@ class ToolErrorsTest {
             env.lines().none { it.trimStart().startsWith("at ") },
         )
         assertEquals("信封只有固定的几行", 3, env.lines().size)
-        val problemLine = env.substringAfter("问题: ").substringBefore('\n')
+        val problemLine = env.substringAfter("Problem: ").substringBefore('\n')
         assertTrue("问题行要截断: ${problemLine.length}", problemLine.length <= 220)
     }
 
@@ -140,16 +140,16 @@ class ToolErrorsTest {
         )
         assertTrue(env.startsWith(ToolErrors.MARK))
         assertTrue(env.contains("CIRCUIT_OPEN"))
-        assertTrue("要说清这次没执行", env.contains("这次调用没有运行"))
-        assertTrue("要说清怎么恢复", env.contains("下一条新消息会恢复"))
-        assertTrue("要列出替代工具且不含被熔断的它", env.contains("web_search") && !env.contains("可用: web_search、web_fetch"))
+        assertTrue("要说清这次没执行", env.contains("this call did not run"))
+        assertTrue("要说清怎么恢复", env.contains("resets on the next user message"))
+        assertTrue("要列出替代工具且不含被熔断的它", env.contains("web_search") && !env.contains("available: web_search, web_fetch"))
     }
 
     @Test
     fun `重复调用提示复用并劝停重发`() {
         val note = ToolErrors.duplicateNote("calculator", "9*9 = 81")
-        assertTrue(note.contains("复用上次结果"))
-        assertTrue(note.contains("不要重发同样的调用"))
+        assertTrue(note.contains("cached result was reused"))
+        assertTrue(note.contains("instead of repeating the call"))
         assertTrue("原结果要在", note.contains("9*9 = 81"))
     }
 }

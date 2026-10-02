@@ -27,7 +27,7 @@ package com.freebuff.core.model
 object ToolErrors {
 
     /** 固定前缀:模型与端上测试都靠它识别「这是一条错误结果」。 */
-    const val MARK = "[工具错误]"
+    const val MARK = "[Tool error]"
 
     /** 同一工具连续失败到第几次开始劝「换路」。第一次失败仍鼓励按建议重试一次。 */
     const val ESCALATE_AT = 2
@@ -46,18 +46,18 @@ object ToolErrors {
      * @param retryable 是否值得按建议重试一次
      */
     enum class Kind(val tag: String, val label: String, val retryable: Boolean) {
-        INVALID_ARGS("INVALID_ARGS", "参数不是合法 JSON", true),
-        MISSING_PARAM("MISSING_PARAM", "缺少必填参数", true),
-        UNKNOWN_PARAM("UNKNOWN_PARAM", "参数名不存在", true),
-        BAD_VALUE("BAD_VALUE", "参数取值不合法", true),
-        UNKNOWN_TOOL("UNKNOWN_TOOL", "工具不存在", false),
-        CIRCUIT_OPEN("CIRCUIT_OPEN", "工具已被端上暂停", false),
-        NOT_FOUND("NOT_FOUND", "没找到对应资源", true),
-        AUTH("AUTH", "鉴权或权限不足", false),
-        RATE_LIMIT("RATE_LIMIT", "请求过于频繁", true),
-        NETWORK("NETWORK", "服务或网络不可用", true),
-        DENIED("DENIED", "用户不允许执行", false),
-        INTERNAL("INTERNAL", "工具内部出错", false),
+        INVALID_ARGS("INVALID_ARGS", "Arguments are not valid JSON", true),
+        MISSING_PARAM("MISSING_PARAM", "Missing required argument", true),
+        UNKNOWN_PARAM("UNKNOWN_PARAM", "Unknown argument name", true),
+        BAD_VALUE("BAD_VALUE", "Invalid argument value", true),
+        UNKNOWN_TOOL("UNKNOWN_TOOL", "Unknown tool", false),
+        CIRCUIT_OPEN("CIRCUIT_OPEN", "Tool paused on this device", false),
+        NOT_FOUND("NOT_FOUND", "Resource not found", true),
+        AUTH("AUTH", "Authentication or permission required", false),
+        RATE_LIMIT("RATE_LIMIT", "Too many requests", true),
+        NETWORK("NETWORK", "Service or network unavailable", true),
+        DENIED("DENIED", "User denied execution", false),
+        INTERNAL("INTERNAL", "Internal tool error", false),
     }
 
     /** 参数层面的一条问题(交给 [forProblems] 变成给模型看的信封)。 */
@@ -66,27 +66,27 @@ object ToolErrors {
 
         /** 必填参数缺失。 */
         data class Missing(val name: String) : ArgProblem {
-            override fun describe() = "必填参数 " + name + " 没有给"
+            override fun describe() = "Required argument " + name + " is missing"
         }
 
         /** 参数名不在 schema 里(弱模型常自造参数名,如把 path 写成 file)。 */
         data class Unknown(val name: String) : ArgProblem {
-            override fun describe() = "参数名 " + name + " 不存在(可能你想用的是别的名字)"
+            override fun describe() = "Argument name " + name + " is unknown (you may need a different name)"
         }
 
         /** 取值不在闭集里。 */
         data class Enum(val name: String, val value: String, val allowed: List<String>) : ArgProblem {
-            override fun describe() = "参数 " + name + " 的取值「" + value + "」不在允许范围内"
+            override fun describe() = "Argument " + name + " has value “" + value + "” outside the allowed values"
         }
 
         /** 数值越界。 */
         data class Range(val name: String, val value: String, val min: Int?, val max: Int?) : ArgProblem {
-            override fun describe() = "参数 " + name + " 的取值「" + value + "」超出范围"
+            override fun describe() = "Argument " + name + " has value “" + value + "” outside the allowed range"
         }
 
         /** 类型不对且无法自动归一。 */
         data class Type(val name: String, val value: String, val expected: String) : ArgProblem {
-            override fun describe() = "参数 " + name + " 需要 " + expected + " 类型,收到的是「" + value + "」"
+            override fun describe() = "Argument " + name + " requires " + expected + "; received “" + value + "”"
         }
     }
 
@@ -99,18 +99,18 @@ object ToolErrors {
         attempt: Int = 1,
         example: String = "",
     ): String = buildString {
-        append(MARK).append(" 类型=").append(kind.label).append('/').append(kind.tag)
-        if (tool.isNotBlank()) append(" · 工具=").append(tool)
-        if (attempt > 1) append(" · 第 ").append(attempt).append(" 次失败")
-        append('\n').append("问题: ").append(oneLine(problem, MAX_PROBLEM))
-        append('\n').append("怎么改: ").append(oneLine(fix, MAX_FIX))
-        if (example.isNotBlank()) append('\n').append("正确调用示例: ").append(oneLine(example, MAX_FIX))
+        append(MARK).append(" Type=").append(kind.label).append('/').append(kind.tag)
+        if (tool.isNotBlank()) append(" · Tool=").append(tool)
+        if (attempt > 1) append(" · Attempt ").append(attempt).append(" failed")
+        append('\n').append("Problem: ").append(oneLine(problem, MAX_PROBLEM))
+        append('\n').append("How to fix: ").append(oneLine(fix, MAX_FIX))
+        if (example.isNotBlank()) append('\n').append("Correct call example: ").append(oneLine(example, MAX_FIX))
         if (attempt >= ESCALATE_AT) append('\n').append(ESCALATE)
     }
 
     /** 同一工具连续出错时的追加提醒(有界自纠:别把循环耗在同一个错误上)。 */
     const val ESCALATE =
-        "注意:该工具已连续失败两次,不要再发同样的调用 —— 换参数、换工具,或直接告诉用户卡在哪里。"
+        "This tool has failed twice in a row. Do not repeat the same call. Change arguments, choose another tool, or tell the user what is blocking progress."
 
     /**
      * 熔断:同一工具在本轮对话里连败到 [BREAK_AT] 次后,端上不再执行它,直接回这张信封。
@@ -121,10 +121,10 @@ object ToolErrors {
         val others = known.filter { it != tool }
         return report(
             Kind.CIRCUIT_OPEN, tool,
-            "该工具本轮已连续失败 " + attempt + " 次,端上已暂停执行,这次调用没有运行",
-            "不要再调用 " + tool + ":换其它工具" +
-                (if (others.isNotEmpty()) "(可用: " + others.take(4).joinToString("、") + "…)" else "") +
-                ",或直接告诉用户这一步卡在哪里;下一条新消息会恢复该工具",
+            "This tool has failed " + attempt + " times in a row this turn. It is paused on this device; this call did not run.",
+            "Do not call " + tool + " again; use another tool" +
+                (if (others.isNotEmpty()) " (available: " + others.take(4).joinToString(", ") + "…)" else "") +
+                ", or tell the user what is blocking this step. The tool resets on the next user message.",
             attempt,
         )
     }
@@ -141,11 +141,11 @@ object ToolErrors {
 
     /** 单条参数问题的「怎么改」处方(合并信封与单条信封共用)。 */
     private fun argFix(p: ArgProblem): String = when (p) {
-        is ArgProblem.Missing -> "补上 " + p.name + " 后重试一次。"
-        is ArgProblem.Unknown -> "删掉未声明的参数「" + p.name + "」,只用声明过的参数。"
-        is ArgProblem.Enum -> p.name + " 只能取 " + p.allowed.joinToString(" / ") + "。"
-        is ArgProblem.Range -> p.name + " 取值需在 " + (p.min?.toString() ?: "不限") + "~" + (p.max?.toString() ?: "不限") + " 之内。"
-        is ArgProblem.Type -> p.name + " 要传 " + p.expected + "。"
+        is ArgProblem.Missing -> "Add " + p.name + " and retry once."
+        is ArgProblem.Unknown -> "Remove the undeclared argument “" + p.name + "”; use only declared arguments."
+        is ArgProblem.Enum -> p.name + " must be one of " + p.allowed.joinToString(" / ") + "。"
+        is ArgProblem.Range -> p.name + " must be within " + (p.min?.toString() ?: "unbounded") + "~" + (p.max?.toString() ?: "unbounded") + "."
+        is ArgProblem.Type -> p.name + " must have type " + p.expected + "。"
     }
 
     /** 单条参数问题对应的错误分类(取最严重的一类:缺参 > 参数名不存在 > 取值不合法)。 */
@@ -169,12 +169,12 @@ object ToolErrors {
         if (problems.isEmpty()) return ""
         if (problems.size == 1) {
             val p = problems.first()
-            val fix = argFix(p) + "参数清单: " + warnParams(tool)
+            val fix = argFix(p) + "Arguments: " + warnParams(tool)
             return report(argKind(p), tool.name, p.describe(), fix, attempt, tool.example)
         }
         val problem = problems.mapIndexed { i, p -> numbered(i) + " " + p.describe() }.joinToString(" ")
         val fix = problems.mapIndexed { i, p -> numbered(i) + " " + argFix(p) }.joinToString(" ") +
-            "参数清单: " + warnParams(tool)
+            "Arguments: " + warnParams(tool)
         val kind = problems.maxByOrNull { argSeverity(it) }?.let(::argKind) ?: Kind.BAD_VALUE
         return report(kind, tool.name, problem, fix, attempt, tool.example)
     }
@@ -194,28 +194,28 @@ object ToolErrors {
     fun unknownTool(name: String, known: List<String>): String {
         val near = nearest(name, known)
         val problem = if (near.isEmpty()) {
-            "没有名为 " + name + " 的工具(工具名必须来自可用清单)"
+            "No tool named " + name + " (tool names must come from the available list)"
         } else {
-            "没有名为 " + name + " 的工具;名字接近的有:" + near.joinToString("、")
+            "No tool named " + name + "; similar names: " + near.joinToString(", ")
         }
-        val fix = "从可用工具里挑一个重新调用" +
-            (if (near.isNotEmpty()) "(优先用「" + near.first() + "」)" else "") +
-            "。可用工具: " + known.joinToString("、")
+        val fix = "Choose an available tool and call it again" +
+            (if (near.isNotEmpty()) " (prefer “" + near.first() + "”)" else "") +
+            ". Available tools: " + known.joinToString(", ")
         return report(Kind.UNKNOWN_TOOL, name, problem, fix)
     }
 
     /** 用户在设置里禁用了该工具。 */
     fun disabledByUser(tool: String): String = report(
         Kind.DENIED, tool,
-        "该工具已被用户在设置里禁用",
-        "不要重复调用它;改用其它工具完成,或把这一步交给用户自己做",
+        "The user disabled this tool in settings",
+        "Do not call it again. Use another tool or ask the user to handle this step.",
     )
 
     /** 用户在确认弹窗里点了「拒绝」。 */
     fun deniedByUser(tool: String): String = report(
         Kind.DENIED, tool,
-        "用户拒绝了这次调用",
-        "不要重复调用它;换其它方式达成目标,或把需要用户配合的部分直接说清楚",
+        "The user denied this call",
+        "Do not call it again. Find another way or explain what needs the user's help.",
     )
 
     /**
@@ -223,9 +223,9 @@ object ToolErrors {
      * 不是错误,但同样要带上「别再发一遍」的处方 —— 模型重放同一组工具是本项目实测过的主要循环之一。
      */
     fun duplicateNote(tool: String, cached: String): String = buildString {
-        append("↺ 这次调用与上一次完全相同,已复用上次结果(没有重新执行)。")
-        append("若结果不是你要的,换参数或换工具,不要重发同样的调用。")
-        if (cached.isNotBlank()) append("\n\n上次结果:\n").append(cached)
+        append("↺ This call is identical to the previous one. The cached result was reused; it did not run again. ")
+        append("If the result is insufficient, change the arguments or tool instead of repeating the call.")
+        if (cached.isNotBlank()) append("\n\nPrevious result:\n").append(cached)
     }
 
     /**
@@ -235,14 +235,14 @@ object ToolErrors {
     fun http(tool: String, code: Int, detail: String, attempt: Int = 1, hint: String = ""): String {
         val (kind, fix) = when {
             code == 401 || code == 403 ->
-                Kind.AUTH to "该资源需要登录或没有权限;换成公开可访问的资源,或请用户提供授权"
+                Kind.AUTH to "This resource requires sign-in or permission. Use a public resource or ask the user to authorize access."
             code == 404 ->
-                Kind.NOT_FOUND to "检查名称/路径拼写是否写错,确认资源确实存在后再重试一次"
+                Kind.NOT_FOUND to "Check the name/path spelling and confirm the resource exists, then retry once."
             code == 429 ->
-                Kind.RATE_LIMIT to "被限流了;等一会儿再说,或减少调用次数(不要连续重试)"
+                Kind.RATE_LIMIT to "Rate limited. Wait or make fewer calls; do not retry repeatedly."
             code >= 500 ->
-                Kind.NETWORK to "对方服务临时故障;可以等一会儿重试一次,仍失败就换其它来源"
-            else -> Kind.INTERNAL to "换其它工具或换参数再试;不要用相同参数反复重试"
+                Kind.NETWORK to "The service is temporarily unavailable. Retry once after a delay, then use another source if it still fails."
+            else -> Kind.INTERNAL to "Try another tool or change arguments. Do not repeatedly retry with the same arguments."
         }
         val problem = "HTTP " + code + (if (detail.isBlank()) "" else " - " + detail)
         return report(kind, tool, problem, if (hint.isBlank()) fix else hint + "。" + fix, attempt)
@@ -251,7 +251,7 @@ object ToolErrors {
     /** 兜底:工具内部异常(绝不把堆栈丢给模型)。 */
     fun internalError(tool: String, detail: String, attempt: Int = 1): String = report(
         Kind.INTERNAL, tool, detail,
-        "换其它工具或换参数再试一次;若还是这个错,直接把情况告诉用户",
+        "Try another tool or change arguments once. If the error persists, tell the user.",
         attempt,
     )
 
@@ -259,8 +259,8 @@ object ToolErrors {
 
     /** "名:类型(必填/可选)" 的紧凑清单:信封里带一份,模型不必回头猜 schema。 */
     private fun warnParams(tool: AgentTool): String =
-        tool.params.joinToString("、") { p ->
-            p.name + ":" + p.type + (if (p.required) "" else "(可选)")
+        tool.params.joinToString(", ") { p ->
+            p.name + ":" + p.type + (if (p.required) "" else "(optional)")
         }
 
     /** 单行化 + 截断:信封必须是固定形状,不允许被换行/超长细节冲散。 */

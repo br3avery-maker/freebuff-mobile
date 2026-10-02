@@ -106,7 +106,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
         ChatHeader(
-            title = session?.title ?: "新对话",
+            title = session?.title ?: "New chat",
             modelName = modelName,
             onBack = { navigator.navigate(AppNavState.ROUTE_HOME) },
             onModel = { navigator.openSheet(AppNavState.SHEET_MODEL) },
@@ -175,7 +175,7 @@ private fun ToolConfirmOverlay(
         Column(
             Modifier.padding(horizontal = 28.dp).clip(R14).background(t.surface).padding(20.dp),
         ) {
-            Text("工具执行确认", color = t.text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Text("Confirm tool execution", color = t.text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(10.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(toolGlyph(tool) + " ", color = t.accent, fontSize = 13.sp)
@@ -187,7 +187,7 @@ private fun ToolConfirmOverlay(
                     fontFamily = FontFamily.Monospace)
             }
             Spacer(Modifier.height(12.dp))
-            Text("该工具需要你的确认后才会执行;拒绝会把结果告知模型。", color = t.text3, fontSize = 11.sp)
+            Text("This tool needs your approval. If you deny it, the model will be told.", color = t.text3, fontSize = 11.sp)
             Spacer(Modifier.height(10.dp))
             // 「本次会话记住选择」:仅记忆到本次会话结束,不改设置页的持久化分级
             Row(verticalAlignment = Alignment.CenterVertically,
@@ -200,19 +200,19 @@ private fun ToolConfirmOverlay(
                     if (rememberChoice) Text("✓", color = t.accentInk, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 }
                 Spacer(Modifier.width(8.dp))
-                Text("本次会话记住选择(会话结束自动失效)", color = t.text2, fontSize = 11.sp)
+                Text("Remember for this chat (expires when the chat ends)", color = t.text2, fontSize = 11.sp)
             }
             Spacer(Modifier.height(16.dp))
             Row {
                 Text(
-                    "拒绝", color = t.text2, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                    "Deny", color = t.text2, fontSize = 13.sp, fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f).clip(RFull).background(t.surface2)
                         .clickable { onDeny(rememberChoice) }.padding(vertical = 10.dp),
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 )
                 Spacer(Modifier.width(10.dp))
                 Text(
-                    "允许执行", color = t.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                    "Allow", color = t.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f).clip(RFull).background(t.accent.copy(alpha = 0.14f))
                         .clickable { onAllow(rememberChoice) }.padding(vertical = 10.dp),
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -235,7 +235,7 @@ private fun ContextCompactedHint(compacted: Int, summaryTokens: Int) {
     ) {
         Text("⛶ ", color = t.accent, fontSize = 11.sp)
         Text(
-            "已压缩早期上下文 · $compacted 条消息 → 摘要(约 $summaryTokens token)",
+            "Earlier context condensed · $compacted messages → summary (about $summaryTokens tokens)",
             color = t.text3,
             fontSize = 11.sp,
         )
@@ -256,15 +256,15 @@ private fun ChatEmpty(canPick: Boolean, onPick: (String) -> Unit) {
             contentAlignment = Alignment.Center,
         ) { Text("›_", color = t.accent, fontSize = 20.sp, fontWeight = FontWeight.Bold) }
         Spacer(Modifier.height(14.dp))
-        Text("今天想构建点什么?", color = t.text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        Text("What would you like to build today?", color = t.text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(6.dp))
         Text(
-            if (canPick) "可以直接描述需求,或从下面的示例开始" else "从首页点「+」发起任务",
+            if (canPick) "Describe what you need or start with an example below" else "Tap + on the home screen to start a task",
             color = t.text3, fontSize = 12.5.sp,
         )
         if (!canPick) return@Column
         Spacer(Modifier.height(22.dp))
-        Text("示例", color = t.text3, fontSize = 11.5.sp, fontWeight = FontWeight.Medium,
+        Text("Examples", color = t.text3, fontSize = 11.5.sp, fontWeight = FontWeight.Medium,
             modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(8.dp))
         CHAT_SUGGESTS.chunked(2).forEach { pair ->
@@ -328,7 +328,7 @@ private fun AgentCodeBlock(lang: String, code: String, onCopy: () -> Unit) {
         Row(Modifier.fillMaxWidth().background(t.codeHeader).padding(horizontal = 10.dp, vertical = 6.dp)) {
             Text(lang, color = t.text3, fontSize = 10.5.sp, fontFamily = FontFamily.Monospace)
             Spacer(Modifier.weight(1f))
-            Text("复制", color = t.accent, fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold,
+            Text("Copy", color = t.accent, fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { onCopy() }.padding(horizontal = 6.dp))
         }
         Text(code, color = t.codeText, fontSize = 12.sp, fontFamily = FontFamily.Monospace, lineHeight = 17.sp,
@@ -384,7 +384,7 @@ private fun AgentBody(m: ChatMsg, isStreaming: Boolean, onCopy: (String) -> Unit
         }
         if (isStreaming) {
             Spacer(Modifier.height(6.dp))
-            Text("● 正在生成…", color = t.accent, fontSize = 11.sp)
+            Text("● Generating…", color = t.accent, fontSize = 11.sp)
         } else {
             // 原型 .msg-actions:一条消息一个复制动作,复制完整正文(含代码块)
             Spacer(Modifier.height(6.dp))
@@ -398,7 +398,7 @@ private fun AgentBody(m: ChatMsg, isStreaming: Boolean, onCopy: (String) -> Unit
                 if (m.md2.isNotBlank()) append(if (isEmpty()) "" else "\n").append(m.md2)
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("⧉ 复制", color = t.text3, fontSize = 11.5.sp,
+                Text("⧉ Copy", color = t.text3, fontSize = 11.5.sp,
                     modifier = Modifier.clip(RoundedCornerShape(7.dp)).clickable { onCopy(payload) }
                         .padding(horizontal = 8.dp, vertical = 4.dp))
             }
@@ -422,7 +422,7 @@ private fun ReasoningBlock(text: String, live: Boolean) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("✦", color = t.text3, fontSize = 11.sp)
             Text(
-                if (live) " 思考中…" else " 已深度思考 · 点开查看",
+                if (live) " Thinking…" else " Reasoning · Tap to expand",
                 color = t.text3, fontSize = 11.5.sp, fontWeight = FontWeight.Medium,
             )
             Spacer(Modifier.weight(1f))
@@ -480,7 +480,7 @@ private fun ToolCardItem(card: ToolCard, last: Boolean) {
             Spacer(Modifier.width(7.dp))
             if (subagent != null) {
                 Text("✷ ", color = t.accent, fontSize = 11.5.sp)
-                Text("子代理 · ", color = t.text2, fontSize = 11.5.sp)
+                Text("Subagent · ", color = t.text2, fontSize = 11.5.sp)
                 Text(subagent, color = t.text, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
             } else {
                 Text(toolGlyph(card.tool) + " ", color = t.accent, fontSize = 11.sp)
@@ -489,11 +489,11 @@ private fun ToolCardItem(card: ToolCard, last: Boolean) {
             Spacer(Modifier.weight(1f))
             Text(
                 when {
-                    card.isWaiting -> "待确认"
-                    card.isRunning -> "运行中"
-                    card.isError -> "失败"
-                    card.isReused -> "复用"
-                    else -> "完成"
+                    card.isWaiting -> "Awaiting approval"
+                    card.isRunning -> "Running"
+                    card.isError -> "Failed"
+                    card.isReused -> "Reused"
+                    else -> "Done"
                 },
                 color = stateColor, fontSize = 10.sp, fontWeight = FontWeight.Medium,
             )
@@ -501,7 +501,7 @@ private fun ToolCardItem(card: ToolCard, last: Boolean) {
         }
         // 摘要行:输入摘要(路径/命令/搜索词);子代理显示实时输出尾部
         val summary = if (subagent != null && card.isRunning) {
-            card.input.lines().lastOrNull { it.isNotBlank() }?.take(80).orEmpty().ifBlank { "启动中…" }
+            card.input.lines().lastOrNull { it.isNotBlank() }?.take(80).orEmpty().ifBlank { "Starting…" }
         } else card.input.take(80)
         if (summary.isNotBlank()) {
             Spacer(Modifier.height(4.dp))
@@ -511,10 +511,10 @@ private fun ToolCardItem(card: ToolCard, last: Boolean) {
         // 展开区:完整输入/输出
         if (expanded.value) {
             Spacer(Modifier.height(8.dp))
-            DetailLine("输入", card.input.ifBlank { "(无参数)" })
+            DetailLine("Input", card.input.ifBlank { "(no arguments)" })
             if (card.output.isNotBlank()) {
                 Spacer(Modifier.height(6.dp))
-                DetailLine("输出", card.output)
+                DetailLine("Output", card.output)
             }
         }
     }
@@ -569,7 +569,7 @@ private fun Composer(
             singleLine = true,
             decorationBox = { inner ->
                 Box {
-                    if (input.isEmpty()) Text("描述任务…", color = t.text3, fontSize = 13.5.sp)
+                    if (input.isEmpty()) Text("Describe a task…", color = t.text3, fontSize = 13.5.sp)
                     inner()
                 }
             },
@@ -581,17 +581,17 @@ private fun Composer(
                     .padding(horizontal = 8.dp, vertical = 6.dp))
             // 📎 是彩色 emoji,浅色主题下实测 2.3:1;改用能跟着主题色的文档字形
             Text("▤", color = t.text2, fontSize = 13.sp,
-                modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { onTool("@文件") }
+                modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { onTool("@file") }
                     .padding(horizontal = 6.dp, vertical = 6.dp))
         }
         Spacer(Modifier.width(4.dp))
         if (streaming) {
-            Text("停止", color = t.danger, fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
+            Text("Stop", color = t.danger, fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.clip(RFull).clickable { onStop() }.padding(horizontal = 12.dp, vertical = 9.dp))
         } else {
             val canSend = input.isNotBlank()
             // 禁用态压在同色系浅底上:text3 在深色主题只有 4.4:1,统一用 text2 保证 ≥5:1
-            Text("发送", color = if (canSend) t.accentInk else t.text2,
+            Text("Send", color = if (canSend) t.accentInk else t.text2,
                 fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.clip(RFull)
                     .background(if (canSend) t.accent else t.surface3)
@@ -603,8 +603,8 @@ private fun Composer(
 
 /** 原型空会话中的示例任务(图标 + 文案)。 */
 private val CHAT_SUGGESTS: List<Pair<String, String>> = listOf(
-    "⌨" to "帮我写一个定时清理临时文件的脚本",
-    "⚡" to "这段代码为什么慢?帮我优化",
-    "▤" to "给我一份 30 天 Python 学习路线",
-    "🐞" to "排查报错:undefined 的 map 调用",
+    "⌨" to "Write a script that cleans up temporary files on a schedule",
+    "⚡" to "Why is this code slow? Help me optimize it",
+    "▤" to "Give me a 30-day Python learning plan",
+    "🐞" to "Debug this error: calling map on undefined",
 )

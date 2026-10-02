@@ -9,10 +9,10 @@ import java.util.TimeZone
  * 这里按创建时刻切「本地日」分桶,分组顺序与列表顺序一致,不会出现组内跳序。
  */
 enum class SessionBucket(val label: String) {
-    TODAY("今天"),
-    YESTERDAY("昨天"),
-    WEEK("7 天内"),
-    EARLIER("更早"),
+    TODAY("Today"),
+    YESTERDAY("Yesterday"),
+    WEEK("Last 7 days"),
+    EARLIER("Earlier"),
 }
 
 /** 一个分组及其会话(组内顺序沿用输入顺序)。 */
@@ -70,14 +70,14 @@ fun sessionTimeLabel(
     zoneOffset: Int = zoneOffsetMillis(now),
 ): String {
     val at = session.createdAt
-    if (at <= 0L) return "较早"
+    if (at <= 0L) return "Earlier"
     val diff = now - at
-    if (diff < 60_000L) return "刚刚"
-    if (diff < 3_600_000L) return (diff / 60_000L).toString() + " 分钟前"
+    if (diff < 60_000L) return "Just now"
+    if (diff < 3_600_000L) return (diff / 60_000L).toString() + " min ago"
     return when (val days = localDayDiff(at, now, zoneOffset)) {
         in Long.MIN_VALUE..0L -> clockLabel(at, zoneOffset)
-        1L -> "昨天"
-        in 2L..7L -> "$days 天前"
+        1L -> "Yesterday"
+        in 2L..7L -> "$days days ago"
         else -> dateLabel(at, now, zoneOffset)
     }
 }

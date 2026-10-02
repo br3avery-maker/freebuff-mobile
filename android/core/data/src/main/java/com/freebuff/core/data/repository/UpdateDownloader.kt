@@ -69,7 +69,7 @@ class UpdateDownloader @Inject constructor(
                     HttpTarget.UpdateSource,
                 )
             }
-            val body = response.body ?: throw ApiError.Parse("下载响应没有内容")
+            val body = response.body ?: throw ApiError.Parse("Download response has no content")
             val total = body.contentLength().coerceAtLeast(0L)
             val digest = MessageDigest.getInstance("SHA-256")
             var received = 0L
@@ -93,7 +93,7 @@ class UpdateDownloader @Inject constructor(
             throw ApiError.ChecksumFailed(sha256, actual)
         }
         if (dest.exists() && !dest.delete()) {
-            throw ApiError.Unknown(IllegalStateException("无法替换已存在的安装包: " + dest.name))
+            throw ApiError.Unknown(IllegalStateException("Could not replace the existing APK: " + dest.name))
         }
         // 改名是原子的:要么是校验过的完整包,要么什么都没有
         if (!part.renameTo(dest)) {

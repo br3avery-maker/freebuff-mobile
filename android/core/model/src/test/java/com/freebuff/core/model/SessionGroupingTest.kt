@@ -14,7 +14,7 @@ class SessionGroupingTest {
         LocalDateTime.of(y, mo, d, h, mi).toInstant(ZoneOffset.ofHours(tzHours)).toEpochMilli()
 
     private fun session(id: String, createdAt: Long) =
-        Session(id, "会话 $id", "刚刚", "", emptyList(), createdAt)
+        Session(id, "会话 $id", "Just now", "", emptyList(), createdAt)
 
     private val now = ts(2026, 9, 26, 10, 0)
 
@@ -64,8 +64,8 @@ class SessionGroupingTest {
         assertEquals(listOf("a", "c"), sections[0].sessions.map { it.id })
         assertEquals(listOf("d"), sections[1].sessions.map { it.id })
         assertEquals(listOf("b"), sections[2].sessions.map { it.id })
-        assertEquals("今天", sections[0].label)
-        assertEquals("更早", sections[2].label)
+        assertEquals("Today", sections[0].label)
+        assertEquals("Earlier", sections[2].label)
     }
 
     @Test
@@ -75,17 +75,17 @@ class SessionGroupingTest {
 
     @Test
     fun `时间文案覆盖刚刚 分钟前 今天时刻 昨天 天数与日期`() {
-        assertEquals("刚刚", sessionTimeLabel(session("a", now - 30_000L), now, 0))
-        assertEquals("10 分钟前", sessionTimeLabel(session("a", now - 600_000L), now, 0))
+        assertEquals("Just now", sessionTimeLabel(session("a", now - 30_000L), now, 0))
+        assertEquals("10 min ago", sessionTimeLabel(session("a", now - 600_000L), now, 0))
         assertEquals("01:05", sessionTimeLabel(session("a", ts(2026, 9, 26, 1, 5)), now, 0))
-        assertEquals("昨天", sessionTimeLabel(session("a", ts(2026, 9, 25, 9, 0)), now, 0))
-        assertEquals("3 天前", sessionTimeLabel(session("a", ts(2026, 9, 23, 9, 0)), now, 0))
+        assertEquals("Yesterday", sessionTimeLabel(session("a", ts(2026, 9, 25, 9, 0)), now, 0))
+        assertEquals("3 days ago", sessionTimeLabel(session("a", ts(2026, 9, 23, 9, 0)), now, 0))
         assertEquals("09-10", sessionTimeLabel(session("a", ts(2026, 9, 10, 9, 0)), now, 0))
         assertEquals("2025-12-31", sessionTimeLabel(session("a", ts(2025, 12, 31, 9, 0)), now, 0))
     }
 
     @Test
     fun `旧会话不编造时间,统一显示较早`() {
-        assertEquals("较早", sessionTimeLabel(session("a", 0L), now, 0))
+        assertEquals("Earlier", sessionTimeLabel(session("a", 0L), now, 0))
     }
 }

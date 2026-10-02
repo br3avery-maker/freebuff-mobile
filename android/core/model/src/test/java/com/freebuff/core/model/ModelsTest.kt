@@ -22,14 +22,14 @@ class ModelsTest {
         val m = official[0]
         assertEquals("cm1", m.id)
         assertEquals("custom", m.tier)
-        assertEquals("自定义模型", m.tierText)
+        assertEquals("Custom models", m.tierText)
         assertEquals("M", m.badge)
         assertEquals("https://local/v1", m.desc)
     }
 
     @Test
     fun `合并列表网关模型在前自定义在后`() {
-        val gateway = listOf(OfficialModel("gateway-a", "Gateway A", "GAT", "full", "完整访问", "来自官方网关"))
+        val gateway = listOf(OfficialModel("gateway-a", "Gateway A", "GAT", "full", "Full access", "来自官方网关"))
         val customs = listOf(CustomModel(id = "cm1", name = "A"))
         val merged = mergedModelList(gateway, customs)
         assertEquals(2, merged.size)

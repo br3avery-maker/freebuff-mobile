@@ -56,6 +56,16 @@ class ToolRepeatTrackerTest {
 class MsgStepsTest {
 
     @Test
+    fun `legacy Chinese status steps are still repaired`() {
+        assertTrue(MsgSteps.isTransient("连接"))
+        assertTrue(MsgSteps.isTransient("第 2 轮"))
+        assertFalse(MsgSteps.isTransient("重试 1"))
+        val repaired = MsgSteps.repairAbandoned(ChatMsg("old", "agent", time = "正在生成"))
+        assertEquals("", repaired.time)
+        assertEquals(MsgSteps.INTERRUPTED_NOTE, repaired.text)
+    }
+
+    @Test
     fun `连接与轮次是过程性的`() {
         assertTrue(MsgSteps.isTransient(MsgSteps.CONNECT))
         assertTrue(MsgSteps.isTransient(MsgSteps.round(1)))
@@ -71,7 +81,7 @@ class MsgStepsTest {
     @Test
     fun `收尾只清过程性步骤`() {
         val steps = listOf(
-            MsgStep(MsgSteps.CONNECT, "连接模型并开始生成…"),
+            MsgStep(MsgSteps.CONNECT, "Connecting to the model…"),
             MsgStep(MsgSteps.retry(1), "上次失败:…"),
             MsgStep(MsgSteps.round(2), "调用 calculator"),
         )
@@ -80,28 +90,28 @@ class MsgStepsTest {
 
     @Test
     fun `轮次文案含轮数、调用文案列出工具`() {
-        assertEquals("第 3 轮", MsgSteps.round(3))
-        assertEquals("正在生成回答…", MsgSteps.calling(emptyList()))
-        assertEquals("调用 current_time、calculator", MsgSteps.calling(listOf("current_time", "calculator")))
+        assertEquals("Round 3", MsgSteps.round(3))
+        assertEquals("Generating reply…", MsgSteps.calling(emptyList()))
+        assertEquals("Calling current_time, calculator", MsgSteps.calling(listOf("current_time", "calculator")))
     }
 
     @Test
     fun `结果摘要取每条的首个非空行`() {
         val d = MsgSteps.digest(
             listOf(
-                "计算器" to "\n\n25",
-                "当前时间" to "2026-09-26 05:24:50\n其他行",
+                "Calculator" to "\n\n25",
+                "Current time" to "2026-09-26 05:24:50\n其他行",
             ),
         )
-        assertTrue(d, d.contains("· 计算器:25"))
-        assertTrue(d, d.contains("· 当前时间:2026-09-26 05:24:50"))
+        assertTrue(d, d.contains("· Calculator:25"))
+        assertTrue(d, d.contains("· Current time:2026-09-26 05:24:50"))
         assertFalse(d, d.contains("其他行"))
     }
 
     @Test
     fun `结果摘要超长截断、空列表返回空串`() {
         assertEquals("", MsgSteps.digest(emptyList()))
-        val long = MsgSteps.digest(listOf("抓取网页" to "x".repeat(500)))
+        val long = MsgSteps.digest(listOf("Fetch webpage" to "x".repeat(500)))
         assertTrue(long, long.contains("x".repeat(160)))
         assertFalse(long, long.contains("x".repeat(161)))
     }
@@ -118,7 +128,7 @@ class MsgStepsTest {
         assertEquals(MsgSteps.STOPPED_NOTE, MsgSteps.stoppedText("   \n"))
         val partial = MsgSteps.stoppedText("已经写了半句")
         assertTrue(partial, partial.startsWith("已经写了半句"))
-        assertTrue(partial, partial.endsWith("以上为已经写出的内容)"))
+        assertTrue(partial, partial.endsWith("The partial reply is shown above.)"))
         // 幂等:两条收尾路径顺序不定,重复标注会让界面出现两遍
         assertEquals(MsgSteps.STOPPED_NOTE, MsgSteps.stoppedText(MsgSteps.STOPPED_NOTE))
         assertEquals(partial, MsgSteps.stoppedText(partial))

@@ -62,8 +62,8 @@ class ToolExecutors @Inject constructor(
             is JsonArgs.Result.Invalid -> return@withContext ToolOutcome(
                 ToolErrors.report(
                     ToolErrors.Kind.INVALID_ARGS, tool.name,
-                    "参数不是合法 JSON:" + r.reason + ";收到的是:" + r.raw.take(120),
-                    "按说明书重发一次:参数必须是 JSON 对象",
+                    "Arguments are not valid JSON: " + r.reason + "; received: " + r.raw.take(120),
+                    "Retry with the documented arguments as a JSON object",
                     attempt, tool.example,
                 ),
                 isError = true,
@@ -106,20 +106,20 @@ class ToolExecutors @Inject constructor(
         // 工具特有的下一步建议:通用处方之外再给一条「怎么找对目标」
         val hint = when (tool) {
             "github_get_file", "github_get_readme" ->
-                "先核对 owner/repo/path:可用 github_search_repositories 搜到正确仓库名"
-            "web_fetch" -> "链接可能已失效或站点拒绝抓取:换一个来源,或先用 web_search 找新链接"
-            "github_search_repositories" -> "搜索接口不可用时可改用 web_search 查该项目主页"
+                "Check owner/repo/path first. Use github_search_repositories to find the correct repository name."
+            "web_fetch" -> "The link may have expired or the site may block fetching. Use another source or find a new link with web_search."
+            "github_search_repositories" -> "If repository search is unavailable, use web_search to find the project's website."
             else -> ""
         }
         val envelope = when (e) {
             is ApiError.Http -> ToolErrors.http(tool, e.code, e.body.take(160), attempt, hint)
             is ApiError.Timeout -> ToolErrors.report(
-                ToolErrors.Kind.NETWORK, tool, "请求超时",
-                "等一会儿重试一次;仍超时就换其它来源或直接告诉用户没取到", attempt,
+                ToolErrors.Kind.NETWORK, tool, "Request timeout",
+                "Retry once after a delay. If it still times out, use another source or tell the user no result was obtained.", attempt,
             )
             is ApiError.NotConfigured -> ToolErrors.report(
                 ToolErrors.Kind.INTERNAL, tool, e.userMessage,
-                "该能力当前不可用(缺少配置);换其它工具完成", attempt,
+                "This feature is unavailable (missing configuration). Use another tool.", attempt,
             )
             else -> ToolErrors.internalError(
                 tool,
@@ -133,8 +133,8 @@ class ToolExecutors @Inject constructor(
     /** 兜底:必填参数缺失(正常路径由 [DefaultTools.validate] 拦住,这里防执行器被单独调用)。 */
     private fun missing(tool: String, param: String): ToolOutcome = ToolOutcome(
         ToolErrors.report(
-            ToolErrors.Kind.MISSING_PARAM, tool, "必填参数 " + param + " 缺失",
-            "补上 " + param + " 后重试一次", 1, DefaultTools.find(tool)?.example.orEmpty(),
+            ToolErrors.Kind.MISSING_PARAM, tool, "Required argument " + param + " is missing",
+            "Add " + param + " and retry once", 1, DefaultTools.find(tool)?.example.orEmpty(),
         ),
         isError = true,
     )
@@ -149,7 +149,7 @@ class ToolExecutors @Inject constructor(
         } catch (e: Exception) {
             ""
         }
-        return ToolOutcome(if (summary.isBlank()) "任务已标记完成。" else "任务已标记完成:" + summary.take(500))
+        return ToolOutcome(if (summary.isBlank()) "Task marked complete." else "Task marked complete: " + summary.take(500))
     }
 
     /* ---------------- 联网搜索(免钥:DuckDuckGo Instant Answer API) ---------------- */
@@ -180,7 +180,7 @@ class ToolExecutors @Inject constructor(
                 sb.append(n + 1).append(". ").append(txt.take(160)).append("  ").append(url)
                 n++
             }
-            if (sb.isEmpty()) sb.append("未找到「").append(q).append("」的结果,可换关键词或用 github/web_fetch 工具补充。")
+            if (sb.isEmpty()) sb.append("No results for “").append(q).append("”. Try other keywords or github/web_fetch tools.")
             return ToolOutcome(sb.toString())
         }
     }
@@ -194,8 +194,8 @@ class ToolExecutors @Inject constructor(
             return ToolOutcome(
                 ToolErrors.report(
                     ToolErrors.Kind.BAD_VALUE, "web_fetch",
-                    "url「" + url.take(80) + "」缺少协议头",
-                    "url 必须以 http:// 或 https:// 开头", 1,
+                    "url「" + url.take(80) + "” is missing a URL scheme",
+                    "url must start with http:// or https://", 1,
                     "web_fetch({\"url\": \"https://example.com/post\"})",
                 ),
                 isError = true,
@@ -227,13 +227,13 @@ class ToolExecutors @Inject constructor(
             val text = r.body?.string().orEmpty()
             if (!r.isSuccessful) throw ApiError.Http(r.code, text.take(200))
             val items = JSONObject(text).optJSONArray("items") ?: JSONArray()
-            if (items.length() == 0) return ToolOutcome("GitHub 未搜到「" + q + "」相关仓库。")
-            val sb = StringBuilder("GitHub 仓库搜索「").append(q).append("」:\n")
+            if (items.length() == 0) return ToolOutcome("No GitHub repositories found for “" + q + "”.")
+            val sb = StringBuilder("GitHub repository search: “").append(q).append("」:\n")
             for (i in 0 until items.length()) {
                 val o = items.optJSONObject(i) ?: continue
                 sb.append(i + 1).append(". ").append(o.optString("full_name"))
                     .append(" ⭐").append(o.optInt("stargazers_count"))
-                    .append(" · ").append(o.optString("language").ifBlank { "未知语言" })
+                    .append(" · ").append(o.optString("language").ifBlank { "Unknown language" })
                     .append(" · ").append(o.optString("description").take(100))
                     .append("\n")
             }
@@ -248,11 +248,11 @@ class ToolExecutors @Inject constructor(
         val path = a.optString("path").trim()
         if (owner.isBlank() || repo.isBlank() || path.isBlank()) {
             val absent = listOf("owner" to owner, "repo" to repo, "path" to path)
-                .filter { it.second.isBlank() }.joinToString("、") { it.first }
+                .filter { it.second.isBlank() }.joinToString(", ") { it.first }
             return ToolOutcome(
                 ToolErrors.report(
-                    ToolErrors.Kind.MISSING_PARAM, "github_get_file", "必填参数 " + absent + " 缺失",
-                    "owner / repo / path 三个都要给(仓库名与文件路径分开写)", 1,
+                    ToolErrors.Kind.MISSING_PARAM, "github_get_file", "Required argument " + absent + " is missing",
+                    "Supply owner, repo, and path separately", 1,
                     DefaultTools.find("github_get_file")?.example.orEmpty(),
                 ),
                 isError = true,
@@ -272,8 +272,8 @@ class ToolExecutors @Inject constructor(
                 return ToolOutcome(
                     ToolErrors.http(
                         "github_get_file", r.code, "", 1,
-                        hint = "核对 " + owner + "/" + repo + "/" + path +
-                            " 是否写错;仓库名可用 github_search_repositories 搜",
+                        hint = "Check whether " + owner + "/" + repo + "/" + path +
+                            " is misspelled. Use github_search_repositories to confirm the repository name.",
                     ),
                     isError = true,
                 )
@@ -310,8 +310,8 @@ class ToolExecutors @Inject constructor(
             ToolOutcome(
                 ToolErrors.report(
                     ToolErrors.Kind.BAD_VALUE, "calculator",
-                    "表达式「" + expr.take(60) + "」无法解析",
-                    "只支持数字与 + - * / 与括号;换一个合法算式重试", 1,
+                    "Expression “" + expr.take(60) + "” could not be parsed",
+                    "Only numbers, + - * /, and parentheses are supported. Retry with a valid expression.", 1,
                     "calculator({\"expression\": \"(12+8)*3.5\"})",
                 ),
                 isError = true,
@@ -352,7 +352,7 @@ private class CalcParser(private val src: String) {
     fun parse(): Double {
         val v = expr()
         skipWs()
-        if (i < src.length) throw IllegalArgumentException("多余字符:" + src.substring(i))
+        if (i < src.length) throw IllegalArgumentException("Unexpected characters: " + src.substring(i))
         return v
     }
 
@@ -388,7 +388,7 @@ private class CalcParser(private val src: String) {
                 i++
                 val v = expr()
                 skipWs()
-                if (src.getOrNull(i) != ')') throw IllegalArgumentException("括号不匹配")
+                if (src.getOrNull(i) != ')') throw IllegalArgumentException("Unmatched parentheses")
                 i++
                 return v
             }
@@ -397,7 +397,7 @@ private class CalcParser(private val src: String) {
             else -> {
                 val start = i
                 while (i < src.length && (src[i].isDigit() || src[i] == '.')) i++
-                if (start == i) throw IllegalArgumentException("缺少数字")
+                if (start == i) throw IllegalArgumentException("Missing number")
                 return src.substring(start, i).toDouble()
             }
         }

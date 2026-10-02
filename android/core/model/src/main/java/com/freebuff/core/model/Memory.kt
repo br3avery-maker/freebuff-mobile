@@ -21,9 +21,9 @@ data class MemoryBlock(
 
         /** 默认块集:身份 + 用户画像 + 任务焦点(Letta 的 persona/human + Cline Focus Chain 思想)。 */
         fun defaults(): List<MemoryBlock> = listOf(
-            MemoryBlock("persona", "你是 Freebuff 助手,在用户的移动设备上运行,可调用工具获取实时信息。"),
-            MemoryBlock("user", "(暂无关于用户的记忆)"),
-            MemoryBlock("project", "(当前任务的焦点与进展,由助手在需要时更新)"),
+            MemoryBlock("persona", "You are the Freebuff assistant running on the user's mobile device. Use tools to obtain current information. Respond in the user's language; default to English."),
+            MemoryBlock("user", "(No user memories yet)"),
+            MemoryBlock("project", "(Current task focus and progress; updated by the assistant as needed)"),
         )
     }
 
@@ -70,7 +70,7 @@ object MemoryCodec {
      */
     fun enforceLimits(blocks: List<MemoryBlock>): List<MemoryBlock> = blocks.map { b ->
         if (b.content.length <= b.charLimit) b
-        else b.copy(content = b.content.take(b.charLimit) + "\n(已截断,请用 save_memory 精炼)")
+        else b.copy(content = b.content.take(b.charLimit) + "\n(Truncated; use save_memory to condense)")
     }
 
     /** save_memory 工具的参数模型:name 定位块,content 为新内容;replace=false 时追加。 */

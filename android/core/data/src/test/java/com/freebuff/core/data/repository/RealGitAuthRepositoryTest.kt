@@ -69,7 +69,7 @@ class RealGitAuthRepositoryTest {
     fun `未配置 client_id 直接失败且不发请求`() = runTest {
         val steps = repo(clientId = "").connect().toList()
         assertEquals(1, steps.size)
-        assertTrue((steps[0] as GitConnectStep.Failed).message.contains("未配置"))
+        assertTrue((steps[0] as GitConnectStep.Failed).message.contains("not configured", ignoreCase = true))
         assertEquals(0, server.requestCount)
     }
 
@@ -119,7 +119,7 @@ class RealGitAuthRepositoryTest {
         val steps = repo().connect().toList()
         assertEquals(2, steps.size)
         val failed = steps[1] as GitConnectStep.Failed
-        assertTrue(failed.message.contains("授权被拒绝"))
+        assertTrue(failed.message.contains("Authorization denied"))
         assertEquals("", settings.getGitToken())
     }
 

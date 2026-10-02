@@ -33,7 +33,7 @@ class SessionRepositoryTest {
         val s = repo.create("新会话")
         assertTrue("创建时刻必须落库(列表按它分组)", s.createdAt > 0L)
         assertEquals(s.createdAt, dao.sessions[s.id]?.createdAt)
-        assertEquals("刚刚", s.time)
+        assertEquals("Just now", s.time)
         assertEquals(1L, dao.sessions[s.id]?.sort)
     }
 
@@ -105,7 +105,7 @@ class SessionRepositoryTest {
                 ChatMsg(
                     "m2", "agent", text = "", time = MsgSteps.GENERATING,
                     steps = listOf(
-                        MsgStep(MsgSteps.CONNECT, "连接模型并开始生成…"),
+                        MsgStep(MsgSteps.CONNECT, "Connecting to the model…"),
                         MsgStep(MsgSteps.retry(1), "上次失败:连接超时"),
                     ),
                     tools = listOf(
@@ -143,7 +143,7 @@ class SessionRepositoryTest {
         // 位次 -1 保证它在 m1 之前 —— 写在末尾就不是「压在历史中间」了
         dao.upsertMessages(
             listOf(
-                ChatMsg("m9", "agent", text = "", steps = listOf(MsgStep(MsgSteps.CONNECT, "连接模型并开始生成…")))
+                ChatMsg("m9", "agent", text = "", steps = listOf(MsgStep(MsgSteps.CONNECT, "Connecting to the model…")))
                     .toEntity(s.id, -1L),
             ),
         )
@@ -152,7 +152,7 @@ class SessionRepositoryTest {
         // 进程被杀留下的半成品总在末尾:这条必须修
         repo.appendMessages(
             s.id,
-            listOf(ChatMsg("m2", "agent", text = "", steps = listOf(MsgStep(MsgSteps.CONNECT, "连接模型并开始生成…")))),
+            listOf(ChatMsg("m2", "agent", text = "", steps = listOf(MsgStep(MsgSteps.CONNECT, "Connecting to the model…")))),
         )
         assertEquals(1, repo.repairAbandonedMessages())
         assertEquals(MsgSteps.INTERRUPTED_NOTE, repo.get(s.id)!!.messages.last().text)

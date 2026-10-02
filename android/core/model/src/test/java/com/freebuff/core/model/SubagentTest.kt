@@ -60,7 +60,7 @@ class SubagentTest {
         val p = Subagent.systemPrompt("researcher")
         assertTrue(p.contains("researcher"))
         assertTrue(p.contains("web_search"))
-        assertTrue(p.contains("不得编造"))
+        assertTrue(p.contains("do not fabricate"))
         assertTrue(p.contains(Subagent.MAX_TOOL_ROUNDS.toString()))
     }
 
@@ -74,10 +74,10 @@ class SubagentTest {
     }
 
     @Test
-    fun `占位文案说明未执行并给出替代路径`() {
+    fun `占位文案说明did not execute并给出替代路径`() {
         val m = Subagent.comingSoonMessage()
-        assertTrue(m.contains("尚未上线"))
-        assertTrue(m.contains("未执行"))
+        assertTrue(m.contains("not available yet"))
+        assertTrue(m.contains("did not execute"))
         assertTrue(m.contains("web_search"))
     }
 

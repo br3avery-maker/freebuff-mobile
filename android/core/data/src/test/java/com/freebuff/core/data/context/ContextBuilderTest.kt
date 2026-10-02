@@ -42,7 +42,7 @@ class ContextBuilderTest {
             workingMemory = "1. [长期] 用户偏好简洁回复",
         )
         val system = built.messages[0].content
-        assertTrue("应含工作记忆小节", system.contains("## 工作记忆"))
+        assertTrue("应含工作记忆小节", system.contains("## Working memory"))
         assertTrue("应含检索到的条目", system.contains("用户偏好简洁回复"))
         assertTrue("应提示 memory_recall 工具", system.contains("memory_recall"))
         assertTrue("应声明 user_id", system.contains("user_id=local"))
@@ -52,7 +52,7 @@ class ContextBuilderTest {
             session = listOf(msg("user", "你好")),
             budget = ContextBudget(contextWindow = 32000),
         )
-        assertTrue(!plain.messages[0].content.contains("## 工作记忆"))
+        assertTrue(!plain.messages[0].content.contains("## Working memory"))
     }
 
     @Test
@@ -66,7 +66,7 @@ class ContextBuilderTest {
             budget = ContextBudget(contextWindow = 32000),
         )
         val agentMsg = built.messages.last()
-        assertTrue("工具结果应被压缩", agentMsg.content.contains("中间省略"))
+        assertTrue("工具结果应被压缩", agentMsg.content.contains("characters omitted"))
         assertTrue(agentMsg.content.length < longOutput.length)
         assertTrue(built.stats.truncatedToolResults >= 1)
     }
@@ -134,7 +134,7 @@ class ContextBuilderTest {
         )
         assertEquals(1, built.messages.size)
         assertEquals("system", built.messages[0].role)
-        assertTrue(built.messages[0].content.contains("Freebuff 助手"))
+        assertTrue(built.messages[0].content.contains("Freebuff assistant"))
     }
 
     @Test
@@ -148,10 +148,10 @@ class ContextBuilderTest {
             toolsEnabled = true,
         )
         val system = on.messages[0].content
-        assertTrue("要教模型怎么读错误信封", system.contains("## 工具使用约定"))
+        assertTrue("要教模型怎么读错误信封", system.contains("## Tool usage rules"))
         assertTrue(system.contains(ToolErrors.MARK))
-        assertTrue("要说清重试一次就换路", system.contains("换工具"))
-        assertTrue("要禁止自造工具名", system.contains("不要自己造工具名"))
+        assertTrue("要说清重试一次就换路", system.contains("switch tools"))
+        assertTrue("要禁止自造工具名", system.contains("do not invent tool names"))
 
         val off = ContextBuilder().build(
             memoryBlocks = emptyList(),
@@ -161,7 +161,7 @@ class ContextBuilderTest {
         )
         assertTrue(
             "没带工具定义时不该讲工具用法(否则会诱发幻觉调用)",
-            !off.messages[0].content.contains("## 工具使用约定"),
+            !off.messages[0].content.contains("## Tool usage rules"),
         )
     }
 

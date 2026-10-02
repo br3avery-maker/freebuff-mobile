@@ -22,7 +22,7 @@ suspend fun <T> silentRetry(
     baseDelayMs: Long = 400L,
     block: suspend () -> ApiResult<T>,
 ): ApiResult<T> {
-    require(attempts >= 1) { "attempts 至少为 1" }
+    require(attempts >= 1) { "attempts must be at least 1" }
     var last: ApiResult<T> = ApiResult.Err(ApiError.Unknown())
     for (i in 1..attempts) {
         val result = block()

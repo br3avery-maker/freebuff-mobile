@@ -78,8 +78,8 @@ class AgentLoopTest {
         )
         assertTrue("再重复应停下,实际 $d", d is AgentLoop.Decision.StopWithNote)
         val note = (d as AgentLoop.Decision.StopWithNote).note
-        assertTrue(note.contains("重复调用"))
-        assertTrue(note.contains("继续"))
+        assertTrue(note.contains("identical tool calls"))
+        assertTrue(note.contains("continue"))
     }
 
     @Test
@@ -112,7 +112,7 @@ class AgentLoopTest {
         assertTrue(d is AgentLoop.Decision.StopWithNote)
         val note = (d as AgentLoop.Decision.StopWithNote).note
         assertTrue(note.contains(AgentLoop.MAX_TOOL_ROUNDS.toString()))
-        assertTrue(note.contains("继续"))
+        assertTrue(note.contains("continue"))
         // 上限要远大于早期实现的 6 轮(否则长任务依旧「几句话就停」)
         assertTrue(AgentLoop.MAX_TOOL_ROUNDS >= 20)
     }

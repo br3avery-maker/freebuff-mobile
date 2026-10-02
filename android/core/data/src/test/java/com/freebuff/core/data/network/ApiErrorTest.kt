@@ -18,13 +18,13 @@ class ApiErrorTest {
     fun `超时归类 Timeout`() {
         val e = SocketTimeoutException("timeout").toApiError()
         assertTrue(e is ApiError.Timeout)
-        assertEquals("连接超时,请检查网络或端点可达性", e.userMessage)
+        assertEquals("Connection timed out. Check your network and endpoint.", e.userMessage)
     }
 
     @Test
     fun `流式空闲归类 StreamIdle 并带秒数文案`() {
         val e = ApiError.StreamIdle(120_000L)
-        assertEquals("连接超时:超过 120 秒没有收到任何流式数据,已自动停止。请检查端点状态或换个模型再试", e.userMessage)
+        assertEquals("Connection timed out: no streaming data for 120 seconds. Stopped automatically. Check the endpoint or try another model.", e.userMessage)
         assertEquals(120_000L, (e as ApiError.StreamIdle).idleMs)
     }
 
@@ -55,7 +55,7 @@ class ApiErrorTest {
 
     @Test
     fun `已分类错误原样透传`() {
-        val src = ApiError.NotConfigured("官方网关地址")
+        val src = ApiError.NotConfigured("Built-in gateway URL")
         val mapped = src.toApiError()
         assertEquals(src, mapped)
     }
@@ -65,15 +65,15 @@ class ApiErrorTest {
         val e = SocketTimeoutException("timeout").toApiError(429)
         assertTrue(e is ApiError.Http)
         assertEquals(429, (e as ApiError.Http).code)
-        assertEquals("请求过于频繁(429):请稍后再试", e.userMessage)
+        assertEquals("Too many requests (429): try again later", e.userMessage)
     }
 
     @Test
     fun `HTTP 码文案覆盖鉴权 路径 限流 服务端`() {
-        assertEquals("鉴权失败(401):请检查 API Key", httpErrorMessage(401))
-        assertEquals("端点不存在(404):请确认 /chat/completions 路径", httpErrorMessage(404))
-        assertEquals("请求过于频繁(429):请稍后再试", httpErrorMessage(429))
-        assertEquals("服务端错误(503):请稍后再试", httpErrorMessage(503))
+        assertEquals("Authentication failed (401): check the API key", httpErrorMessage(401))
+        assertEquals("Endpoint not found (404): check the /chat/completions path", httpErrorMessage(404))
+        assertEquals("Too many requests (429): try again later", httpErrorMessage(429))
+        assertEquals("Server error (503): try again later", httpErrorMessage(503))
         assertTrue(httpErrorMessage(418).contains("418"))
     }
 
@@ -81,17 +81,17 @@ class ApiErrorTest {
     fun `更新源的 HTTP 码不报模型端点的说辞`() {
         // 守卫目标:版本更新的 404 曾经直接复用对话文案,提示用户去检查 /chat/completions 路径
         val msg = httpErrorMessage(404, HttpTarget.UpdateSource)
-        assertTrue(msg.contains("更新源"))
+        assertTrue(msg.contains("Update source"))
         assertFalse(msg.contains("chat/completions"))
         assertEquals(msg, ApiError.Http(404, "body", HttpTarget.UpdateSource).userMessage)
         // 对话侧文案保持不变
-        assertEquals("端点不存在(404):请确认 /chat/completions 路径", httpErrorMessage(404))
+        assertEquals("Endpoint not found (404): check the /chat/completions path", httpErrorMessage(404))
     }
 
     @Test
     fun `未配置文案在中英混排时补空格`() {
-        assertEquals("GitHub OAuth client_id 未配置", ApiError.NotConfigured("GitHub OAuth client_id").userMessage)
-        assertEquals("官方网关地址未配置", ApiError.NotConfigured("官方网关地址").userMessage)
+        assertEquals("GitHub OAuth client_id not configured", ApiError.NotConfigured("GitHub OAuth client_id").userMessage)
+        assertEquals("Built-in gateway URL not configured", ApiError.NotConfigured("Built-in gateway URL").userMessage)
     }
 
     @Test
@@ -107,13 +107,13 @@ class ApiErrorTest {
         // 等于把排查线索丢掉 —— 兜底文案必须把异常类型带出来
         val e = IllegalStateException().toApiError()
         assertTrue(e is ApiError.Unknown)
-        assertEquals("请求失败(IllegalStateException)", e.userMessage)
+        assertEquals("Request failed (IllegalStateException)", e.userMessage)
     }
 
     @Test
     fun `mapChatError 等价于分类文案`() {
-        assertEquals("无法解析主机,请检查端点地址", mapChatError(UnknownHostException("x")))
-        assertEquals("鉴权失败(401):请检查 API Key", mapChatError(RuntimeException("any"), 401))
+        assertEquals("Could not resolve the host. Check the endpoint URL.", mapChatError(UnknownHostException("x")))
+        assertEquals("Authentication failed (401): check the API key", mapChatError(RuntimeException("any"), 401))
     }
 
     @Test
@@ -144,10 +144,10 @@ class ApiErrorTest {
         assertNull(ok.errorOrNull())
         assertNull(ok.errorMessageOrNull())
 
-        val err: ApiResult<String> = ApiResult.Err(ApiError.NotConfigured("更新源地址"))
+        val err: ApiResult<String> = ApiResult.Err(ApiError.NotConfigured("Update source URL"))
         assertNull(err.getOrNull())
         assertTrue(!err.isOk)
-        assertEquals("更新源地址未配置", err.errorMessageOrNull())
+        assertEquals("Update source URL not configured", err.errorMessageOrNull())
 
         assertEquals("fallback", err.fold({ it }, { "fallback" }))
     }

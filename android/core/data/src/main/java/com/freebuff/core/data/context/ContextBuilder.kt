@@ -65,26 +65,26 @@ class ContextBuilder @Inject constructor() {
         val systemText = buildString {
             append(memoryPrompt)
             if (workingMemory.isNotBlank()) {
-                append("\n\n## 工作记忆(按当前问题从记忆库检索;与当前问题无关则忽略)\n")
+                append("\n\n## Working memory (retrieved for this question; ignore irrelevant entries)\n")
                 append(workingMemory)
             }
-            append("\n\n你是 Freebuff 助手。可使用提供的工具获取实时信息(联网搜索/GitHub/计算/时间)。")
+            append("\n\nYou are the Freebuff assistant. Use the provided tools for current information (web search, GitHub, calculations, time). Respond in the user's language; default to English. ")
             // 早停(「几句话就停」)的两道提示防线:多步任务要推进到完成;完成必须有显式信号
-            append("闲聊与单轮问答保持简洁;多步任务要持续推进到目标达成为止 —— 每轮用工具推进下一步,")
-            append("不要只描述计划、也不要中途停下汇报进度。")
-            append("任务真正完成时调用 ").append(AgentLoop.COMPLETION_TOOL)
-                .append("(summary 写清做了什么与遗留事项);需要用户决定时才停下来提问。")
-            append("工具结果仅供你参考加工。")
-            append("\n记忆工具:memory_recall 按需检索历史记忆(用户偏好/关键事实/任务进度),save_memory 更新核心记忆块(persona=你的身份,user=关于用户,project=任务焦点)。")
-            append("当前用户 user_id=").append(userId).append('。')
+            append("Keep casual chat and single questions concise. For multi-step tasks, keep working until the goal is reached. Use tools for the next step each round. ")
+            append("Do not only describe plans or stop midway to report progress. ")
+            append("When the task is complete, call ").append(AgentLoop.COMPLETION_TOOL)
+                .append(" (summary must describe work done and remaining items). Ask questions only when the user needs to decide. ")
+            append("Process tool results into a useful answer. ")
+            append("\nMemory tools: memory_recall searches historical memories (preferences, facts, progress); save_memory updates core blocks (persona=your identity, user=about the user, project=task focus). ")
+            append("Current user_id=").append(userId).append('。')
             if (toolsEnabled) {
                 // 工具协议与「错误信封」的读法:每轮都注入,弱模型才不会把报错当成答案。
                 // 依 Anthropic《Writing effective tools for agents》:错误响应要能指引下一步;
                 // 这里把「怎么读错、该重试几次、什么时候该换路」写进系统提示。
-                append("\n\n## 工具使用约定\n")
-                append("- 参数只写说明书里声明的名字,放进 JSON 对象;缺哪个参数就先问用户,不要自己编。\n")
-                append("- 结果以「[工具错误]」开头时,照「问题 / 怎么改」两行修正后再试一次;同一工具连续出错两次就换工具或直接告诉用户卡在哪里。\n")
-                append("- 工具名只能用工具清单里的;不确定用哪个就先 web_search,不要自己造工具名。")
+                append("\n\n## Tool usage rules\n")
+                append("- Use only documented argument names in a JSON object. Ask the user for missing information rather than inventing it.\n")
+                append("- If a result starts with “[Tool error]”, follow its Problem / How to fix guidance and retry once. After two consecutive failures, switch tools or tell the user what is blocking progress.\n")
+                append("- Use only tool names from the provided list. If uncertain, start with web_search; do not invent tool names.")
             }
         }
         parts += ChatMessage.text("system", systemText)
@@ -135,7 +135,7 @@ class ContextBuilder @Inject constructor() {
                 // 摘要写进 system 提示尾部,而不是插一条新的 system 消息:
                 // OpenAI 兼容网关惯例把 system 当首条,中途再插一条行为不一(实测提醒消息踩过同款)
                 val withSummary = systemText + "\n\n" + SUMMARY_MARK +
-                    "(被裁掉的早期对话已压缩为摘要,以下是摘要正文)\n" + summary
+                    "(Earlier conversation condensed into the following summary)\n" + summary
                 parts[0] = ChatMessage.text("system", withSummary)
                 systemTokens = ContextPolicy.estimateTokens(withSummary)
                 summaryTokens = ContextPolicy.estimateTokens(summary)
@@ -149,7 +149,7 @@ class ContextBuilder @Inject constructor() {
                 append(t.text)
                 t.toolOutputs.forEach { (tool, pair) ->
                     val (state, output) = pair
-                    append("\n\n[").append(tool).append(" → ").append(if (state == "error") "失败" else "完成").append("]\n")
+                    append("\n\n[").append(tool).append(" → ").append(if (state == "error") "Failed" else "Done").append("]\n")
                     append(output)
                 }
             }
@@ -195,7 +195,7 @@ class ContextBuilder @Inject constructor() {
 
     companion object {
         /** 摘要标记(system 提示里的段落头;UI 提示「已压缩早期上下文」另有统计驱动)。 */
-        const val SUMMARY_MARK = "[早期对话摘要]"
+        const val SUMMARY_MARK = "[Earlier conversation summary]"
 
         /** 预算裁剪时永远保留的最近消息条数。 */
         const val KEEP_RECENT = 8

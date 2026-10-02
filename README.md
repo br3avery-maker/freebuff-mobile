@@ -1,3 +1,19 @@
+# Freebuff Mobile — English fork
+
+This fork translates the Android app's menus, forms, tool activity, errors, and agent instructions into English. Chinese input aliases and saved status compatibility remain supported.
+
+**[Download FreebuffMobile-0.0.4-English.apk](https://drive.google.com/file/d/1PYwpgTgFQkcHjDsExL-AYJPdVs4L7xUZ/view?usp=drivesdk)** (1,489,130 bytes; Android 8.0+). The file is in the connected Google Drive account and currently has owner-only access. Its downloaded bytes were verified against the signed local APK. GitHub's large binary upload did not complete, so the installable file is provided through Drive.
+
+[Build details](dist/english-apk-build.json) · [SHA-256 checksum](dist/FreebuffMobile-0.0.4-English.apk.sha256). Built from source commit `82b870656519c0355c080c1dc5a778c2cc0d190c`. All 404 unit tests pass; `lintDebug` passes with warnings and zero errors; `:app:assembleRelease` succeeds with R8 optimization and resource shrinking. APK signature, ZIP integrity, English screen text, and the English update URL were verified. No device/emulator matrix or live-provider smoke test was run.
+
+This is a non-debuggable release build signed with the Android debug certificate because no release keystore was configured. Android will reject an upgrade over a differently signed `com.freebuff.mobile` installation. **Uninstalling that installation removes its local chats, settings, and model configuration.** Preserve any data you need before considering removal.
+
+For an OpenAI-compatible provider, use **Explore first (guest mode) → Settings → Custom models → Add custom model**. Enter a display name, Base URL, API key, and the provider's exact Model ID, then test and save. Choose your saved custom model in the model picker before chatting. The official gateway and GitHub OAuth still require build-time configuration.
+
+Updates and feedback point to `br3avery-maker/freebuff-mobile`. The app reads the `english-ui` update manifest while this PR is unmerged, so it cannot pick up the upstream Chinese APK still advertised by `main`. No GitHub release was published and PR #1 remains unmerged.
+
+## Upstream documentation
+
 # Freebuff Mobile
 
 为 [CodebuffAI/freebuff](https://github.com/CodebuffAI/freebuff) 规划的**安卓手机客户端**,包含两部分交付物:
