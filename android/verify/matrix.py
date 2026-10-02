@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""场景矩阵跑批:26 个端到端场景,逐条向设备发「case xxx」并断言落库/界面/日志。
+"""场景矩阵跑批:29 个端到端场景,逐条向设备发「case xxx」并断言落库/界面/日志。
 
 用法:
   python verify/matrix.py               # 全量
@@ -54,12 +54,14 @@ CASES = (
     ('thinkreject', '端点明确拒绝思考参数 → 去字段重发一次并成功'),
     ('long', '长会话压测:24 轮工具调用+收工,端上连续运行 rounds>=25'),
     ('argerr', '参数名写错 → 信封给处方,按建议改对后自愈'),
-    ('killstart', '流开但零字节时杀进程 → 重启修成「上次生成被中断」'),
-    ('killmid', '半途正文时杀进程 → 重启保留正文并清步骤(全量扫路径)'),
-    ('killtool', '确认弹窗等待时杀进程 → 重启把 waiting 卡片标未完成'),
     ('breaker', '同一工具连败三次 → 端上熔断拒绝执行(CIRCUIT_OPEN),不再只劝模型'),
     ('mergerr', '一次带三个自造参数 → ①②③ 合并处方,照处方改对后一次执行成功'),
     ('notools', '端点拒 tools → 去字段重发并提示'),
+    # kill 三场景排最后:它们要 force-stop 制造中断,CI 上偶发「拉起后界面不再回来」,
+    # 排尾就不会连累其它场景(实测 App 被顶到桌面后,后面用例全在启动器上静默假 FAIL)。
+    ('killstart', '流开但零字节时杀进程 → 重启修成「上次生成被中断」'),
+    ('killmid', '半途正文时杀进程 → 重启保留正文并清步骤(全量扫路径)'),
+    ('killtool', '确认弹窗等待时杀进程 → 重启把 waiting 卡片标未完成'),
 
 )
 
@@ -95,16 +97,30 @@ def streaming():
 
 
 def send(text):
-    """新会话的空态输入框是「例如:修复登录页」+「发起任务」;续聊才是「描述任务…」+「发送」。"""
+    """新会话的空态输入框是「例如:修复登录页」+「发起任务」;续聊才是「描述任务…」+「发送」。
+
+    返回是否真的发出去了:输入框/按钮没点到的静默失败会让后面整片用例假 FAIL
+    (CI 上 App 掉回桌面时就是这样,断言一直在读旧状态)。
+    """
     if flow.do_tap('例如:修复登录页', lowest=True, timeout=8.0):
         button = '发起任务'
-    else:
-        flow.do_tap('描述任务…', lowest=True, timeout=8.0)
+    elif flow.do_tap('描述任务…', lowest=True, timeout=8.0):
         button = '发送'
+    else:
+        print('!! 找不到输入框,消息没发出去', flush=True)
+        return False
     time.sleep(0.6)
     ime.type_text(text)
     time.sleep(0.6)
-    tap(button)
+    return tap(button)
+
+
+def send_or_recover(prompt):
+    """发一条消息;第一次没发出去就先确保 App 在聊天页,再发一次。"""
+    if send(prompt):
+        return True
+    ensure_chat_screen(prompt)
+    return send(prompt)
 
 
 def op_log():
@@ -216,15 +232,33 @@ def logcat_recent(n=4000):
         return ''
 
 
+def logcat_dump(n=2500):
+    """全量 logcat 尾部,含 crash buffer。**不筛 tag** —— 只留 ChatViewModel 时,
+    「App 没起来/进程崩了」这类现场日志是空的,等于白留(CI 踩过)。"""
+    out = []
+    for args in (['-b', 'crash'], ['-b', 'main', 'system']):
+        try:
+            p = subprocess.run([ADB, 'logcat', '-d', '-v', 'threadtime', '-t', str(n)] + args,
+                               capture_output=True, timeout=60).stdout.decode('utf-8', 'ignore')
+            out.append('===== logcat {} =====\n{}'.format(' '.join(args), p))
+        except subprocess.TimeoutExpired:
+            out.append('===== logcat {}: TIMEOUT ====='.format(' '.join(args)))
+    return '\n'.join(out)
+
+
 def fail_evidence(case):
-    """FAIL 时留现场:截图 + 最近一轮 ChatViewModel 日志(CI 排查全靠它)。"""
+    """FAIL 时留现场:截图 + 全量 logcat + 前台/进程/界面状态(CI 排查全靠它)。"""
     try:
         png = subprocess.run([ADB, 'exec-out', 'screencap', '-p'],
                              capture_output=True, timeout=60).stdout
         with open('verify/fail_{}.png'.format(case), 'wb') as fh:
             fh.write(png)
         with open('verify/fail_{}.log'.format(case), 'w', encoding='utf-8') as fh:
-            fh.write(logcat_recent(2000))
+            fh.write('--- app_foreground={} process_alive={} ---\n'.format(
+                app_foreground(), process_alive()))
+            fh.write('--- ui texts ---\n')
+            fh.write(' | '.join(x for x in ui_text() if x) + '\n')
+            fh.write(logcat_dump())
     except Exception as e:            # 现场留存失败不该盖掉真正的失败原因
         print('!! 现场留存失败', e)
 
@@ -314,32 +348,49 @@ def app_foreground():
     return any(('ResumedActivity' in ln) and (KILL_APP in ln) for ln in o.splitlines())
 
 
-def relaunch_app():
-    """冷启动 App,并**确认真回到前台**(修复是否重跑、UI 是否可用全看这一步)。
+def process_alive():
+    """App 进程还在不在。只看 ResumedActivity 会被骗:CI 实测「前台=True」但进程
+    其实已经死了、界面永远画不出来 —— 两个一起看才可靠。"""
+    try:
+        out = subprocess.run([ADB, 'shell', 'pidof', KILL_APP],
+                             capture_output=True, timeout=20).stdout.decode('utf-8', 'ignore')
+        return out.strip() != ''
+    except subprocess.TimeoutExpired:
+        return False
 
-    am start 比 monkey 确定:monkey 只注入一个 LAUNCHER 事件,App 半死/被
-    freezer 冻住时不一定把 Activity 拉到前台。确认不到就换 monkey 再试,直到
-    超时;返回是否成功,调用方据此决定要不要继续。
+
+def main_ui_shown():
+    """主界面(会话列表/聊天页)的文本是否已经画出来。"""
+    return any((x or '') == '会话' or ('描述任务…' in (x or '')) or ('例如:' in (x or ''))
+               for x in ui_text())
+
+
+def relaunch_app(tries=3):
+    """冷启动 App,并**确认真回到前台、界面也画出来了**(修复是否重跑、UI 是否可用全看它)。
+
+    am start 比 monkey 确定(monkey 只注入一个 LAUNCHER 事件,App 半死/被 freezer
+    冻住时不一定把 Activity 拉到前台),但 CI 实测:只看 ResumedActivity 会被骗 ——
+    App 被拉到前台后几秒又掉回桌面/被杀,之后所有点按全打空、后面用例一路假 FAIL。
+    所以成功条件是「进程活着 + 前台 + 主界面文本出现」,不满足就整轮重来。
     """
-    sh('am', 'force-stop', KILL_APP)
-    time.sleep(1.0)
     main = KILL_APP + '/com.freebuff.app.MainActivity'
-    ok = False
-    end = time.time() + 40
-    while time.time() < end and not ok:
+    for attempt in range(1, tries + 1):
+        sh('am', 'force-stop', KILL_APP)
+        time.sleep(1.0)
         sh('am', 'start', '-n', main)
-        for _ in range(8):
-            if app_foreground():
-                ok = True
-                break
-            time.sleep(1.0)
-        if not ok:
-            subprocess.run([ADB, 'shell', 'monkey', '-p', KILL_APP,
-                            '-c', 'android.intent.category.LAUNCHER', '1'], capture_output=True)
-    if not ok:
-        print('!! 重启后 App 没有回到前台(force-stop/adb 状态?)', flush=True)
-    time.sleep(4.0)   # 等首帧 + 冷启动修复落库
-    return ok
+        end = time.time() + 30
+        while time.time() < end:
+            if app_foreground() and process_alive() and main_ui_shown():
+                time.sleep(3.0)   # 首帧稳定 + 等冷启动修复落库(日志/库断言依赖它)
+                return True
+            time.sleep(2.0)
+        print('!! 第 {}/{} 次拉起没成功(前台={} 进程={})'.format(
+            attempt, tries, app_foreground(), process_alive()), flush=True)
+        subprocess.run([ADB, 'shell', 'monkey', '-p', KILL_APP,
+                        '-c', 'android.intent.category.LAUNCHER', '1'], capture_output=True)
+        time.sleep(2.0)
+    print('!! 重启后 App 没有回到前台(force-stop/adb 状态?)', flush=True)
+    return False
 
 
 def wait_clean(sid, timeout=45):
@@ -374,23 +425,66 @@ def startup_logs():
     return [l for l in out.splitlines() if 'FreebuffStartup' in l]
 
 
-def ensure_chat_screen(prompt=None):
-    """把 App 带回聊天页:重启后落在会话列表,要先把最近那条会话点开。
+def tap_first_conversation():
+    """列表页兜底:点开最上面那条会话行。
 
-    列表里标题会被截断(实测 `case killsta…`),但**预览**是完整提示词,所以按提示词精确点。
+    行容器一般只有 bounds 没有 text(文字在子节点上),所以按几何挑:宽度超过半屏、
+    高度像一行(120~600px)、在顶部栏之下 —— 取最靠上的一条,点它的中心。
+    列表预览文案不固定(标题被截断、预览可能是修复后的「(上次生成被中断…)」),
+    按文本找不到时全靠它。
     """
-    for _ in range(5):
-        if any('描述任务…' in (x or '') for x in ui_text()):
-            return True
-        if prompt and flow.do_tap(prompt, lowest=False, timeout=6.0):
+    t = flow.dump_xml()
+    best = None
+    for n in t.iter('node'):
+        if n.get('clickable') != 'true' or (n.get('text') or ''):
+            continue
+        b = [int(x) for x in re.findall(r'\d+', n.get('bounds') or '')]
+        if len(b) != 4:
+            continue
+        x1, y1, x2, y2 = b
+        if (x2 - x1) < 540 or not (120 <= y2 - y1 <= 600):
+            continue
+        if y1 < 600 or y2 > 2100:
+            continue
+        if best is None or y1 < best[0]:
+            best = (y1, (x1 + x2) // 2, (y1 + y2) // 2)
+    if best is None:
+        return False
+    sh('input', 'tap', str(best[1]), str(best[2]))
+    print('tap 会话行', best[1], best[2], flush=True)
+    return True
+
+
+def ensure_chat_screen(prompt=None):
+    """把 App 带回聊天页(必要时先重启):重启后落在会话列表,要先把目标会话点开。
+
+    以前「找不到就按 BACK」—— CI 实测连按几次 BACK 会把 Activity 顶掉、App 退回
+    桌面,后面所有用例都静默打在启动器上。现在:不在前台/进程没了 → 重新拉起;
+    界面没画出来 → 等;在列表 → 按提示词/修复文案/会话行几何兜底点开;不按 BACK。
+    """
+    for _ in range(4):
+        if not (app_foreground() and process_alive()):
+            relaunch_app()
+            continue
+        if not main_ui_shown():
+            time.sleep(2.0)          # 界面还没画出来,给它一拍
+            continue
+        t = ui_text()
+        if any(('描述任务…' in (x or '')) or ('例如:' in (x or '')) for x in t):
+            return True              # 已经在聊天页
+        if prompt and flow.do_tap(prompt, lowest=False, timeout=5.0):
+            time.sleep(2.5)
+            continue
+        if flow.do_tap(INTERRUPTED[:6], lowest=False, timeout=4.0):
             time.sleep(2.5)
             continue
         if flow.do_tap('case ', lowest=False, timeout=4.0):
             time.sleep(2.5)
             continue
-        sh('input', 'keyevent', 'KEYCODE_BACK')
-        time.sleep(1.2)
-    return any('描述任务…' in (x or '') for x in ui_text())
+        if tap_first_conversation():
+            time.sleep(2.5)
+            continue
+    return any(('描述任务…' in (x or '')) or ('例如:' in (x or '')) for x in ui_text())
 
 
 def wait_stale_card(sid, timeout=30):
@@ -412,14 +506,8 @@ def run_kill(case, first=False):
       killtool   确认弹窗等待时杀         → waiting 卡片标未完成,正文保留
     """
     prompt = 'case ' + case
-    if first:
-        flow.do_tap('例如:修复登录页', lowest=True, timeout=12.0)
-        time.sleep(0.8)
-        ime.type_text(prompt)
-        time.sleep(0.8)
-        tap('发起任务')
-    else:
-        send(prompt)
+    if not send_or_recover(prompt):      # 空态/续聊两种输入框 send() 自己挑
+        return False, '发送失败:App 没回到聊天页/输入框不可用'
 
     sid = None
     for _ in range(12):
@@ -667,10 +755,9 @@ def main():
         named = case in only
         # 前置自检:App 若已经掉到后台(force-stop 后没起来 / 被 freezer 冻住),
         # 后面所有用例都会 dump 到启动器、读库里旧状态 —— 一路假 FAIL。先拉回来。
-        if not app_foreground():
-            print('... App 不在前台(%s),先重启并回到会话' % case, flush=True)
-            relaunch_app()
-            ensure_chat_screen(prompt='case ')
+        if not (app_foreground() and process_alive()):
+            print('... App 不在前台/进程不存在(%s),先重启并回到会话' % case, flush=True)
+            ensure_chat_screen(prompt='case ')      # 内部会先 relaunch
         # 断点续跑:全量跑时,上次已 PASS 的场景直接沿用结果,只补没过的;
         # 点名的场景永远实跑(点名就是要重跑它);--fresh 全部实跑
         if not named and not fresh and case in prev and prev[case][0]:
@@ -690,14 +777,14 @@ def main():
             _save_row(case, desc, ok, detail)
             continue
         prompt = 'case ' + case
-        if ran == 1:
-            flow.do_tap('例如:修复登录页', lowest=True, timeout=10.0)
-            time.sleep(0.8)
-            ime.type_text(prompt)
-            time.sleep(0.8)
-            tap('发起任务')
-        else:
-            send(prompt)
+        if not send_or_recover(prompt):
+            ok, detail = False, '发送失败:App 没回到聊天页/输入框不可用'
+            fail_evidence(case)
+            rows.append((case, desc, ok, detail))
+            print('{:<11} {:<4} {}'.format(case, 'FAIL', detail))
+            sys.stdout.flush()
+            _save_row(case, desc, ok, detail)
+            continue
         ok_settle = settle(timeout=300 if case in ('cap', 'long') else 120)
         time.sleep(1.0)
         text, steps, cards, reasoning = agent_row()

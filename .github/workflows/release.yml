@@ -265,8 +265,10 @@ jobs:
           fi
           "$SDK/emulator/emulator" -accel-check
           # 无窗口 + 软件渲染:CI runner 没有 GPU;有 KVM 会走默认加速
+          # -memory 3072:默认 2.5G 在长跑 + 大会话时容易被 LMK 杀 App(实测 App 掉回桌面,
+          # 后面用例全打在启动器上)—— 多给 0.5G,runner 有 7G,负担得起
           nohup "$SDK/emulator/emulator" -avd e2e -no-window -no-audio -no-boot-anim \
-            -no-snapshot -gpu swiftshader_indirect > emulator.log 2>&1 &
+            -no-snapshot -memory 3072 -gpu swiftshader_indirect > emulator.log 2>&1 &
           ADB_BIN="$SDK/platform-tools/adb"
           # 每一步都有硬超时:模拟器起不来要**快速失败并打印原因**,
           # 而不是让 wait-for-device 无超时地把整个 job 挂上 45 分钟(实测踩到过)。
@@ -285,13 +287,28 @@ jobs:
             exit 1
           fi
           echo "boot_completed=1 api=$("$ADB_BIN" shell getprop ro.build.version.sdk | tr -d '\r')"
+          # 关动画:UI 自动化最烦的抖动来源,省掉的等待全算回矩阵
+          for k in window transition animator; do
+            "$ADB_BIN" shell settings put global "${k}_animation_scale" 0 || true
+          done
+          # 屏幕常亮:矩阵要跑 20 多分钟,别让熄屏/锁屏插一脚
+          "$ADB_BIN" shell svc power stayon true || true
 
       - name: E2E matrix (29 scenarios on the release APK)
         run: |
           # 用 runner 的 ANDROID_HOME 定位 adb(脚本也会自己找 PATH,这里显式给一份更稳)
           export ADB="${ANDROID_HOME:-/usr/local/lib/android/sdk}/platform-tools/adb"
+          # 矩阵 FAIL 时也要继续跑下面的现场采集,最后再用原退出码失败本步
+          set +e
           python3 verify/ci_run_matrix.py \
             --apk "dist/FreebuffMobile-${{ steps.rel.outputs.version_label }}-release.apk"
+          rc=$?
+          set -e
+          # 「App 拉不起来/掉回桌面」类问题唯一可靠的现场就是崩溃缓冲(logcat 窗口有限,
+          # 跑完立刻落盘);每个 FAIL 场景的截图/日志由 matrix.py 自己留
+          "$ADB" logcat -d -b crash -t 400 > android/verify/ci_crash.log 2>&1 || true
+          "$ADB" logcat -d -t 4000 > android/verify/ci_logcat_tail.log 2>&1 || true
+          exit $rc
 
       # 失败时最有用的就是现场:每个 FAIL 场景的截图 + 那一轮 ChatViewModel 日志
       - name: Upload matrix artifacts
@@ -305,6 +322,8 @@ jobs:
             android/verify/mock_matrix.log
             android/verify/fail_*.png
             android/verify/fail_*.log
+            android/verify/ci_crash.log
+            android/verify/ci_logcat_tail.log
             android/emulator.log
           if-no-files-found: warn
 
