@@ -18,6 +18,12 @@ class MemoryEntryTest {
     ) = MemoryEntry(id = 0, type = type, content = text, createdAt = at, updatedAt = at, hits = hits)
 
     @Test
+    fun `English lookup status does not become memory`() {
+        assertTrue(MemoryExtraction.parse("""[{"content":"No memories related to this request"},{"content":"Called memory_recall with no results"}]""").isEmpty())
+        assertEquals("The user prefers short answers", MemoryExtraction.parse("""[{"content":"The user prefers short answers"}]""").single().content)
+    }
+
+    @Test
     fun `分词 CJK 切 bigram 拉丁按词小写`() {
         val tokens = MemoryRetrieval.tokenize("我喜欢 Kotlin 简洁")
         assertTrue("应含 bigram 我喜", tokens.contains("我喜"))

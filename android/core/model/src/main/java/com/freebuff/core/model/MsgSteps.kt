@@ -45,7 +45,7 @@ object MsgSteps {
         msg.role != "agent" -> msg
         else -> msg.copy(
             text = if (msg.text.isBlank()) INTERRUPTED_NOTE else msg.text,
-            time = if (msg.time == GENERATING) "" else msg.time,
+            time = if (msg.time == GENERATING || msg.time == "正在生成") "" else msg.time,
             steps = withoutTransient(msg.steps),
             tools = msg.tools.map { card ->
                 if (card.isRunning || card.isWaiting) {
@@ -85,9 +85,9 @@ object MsgSteps {
 
     /** 过程性步骤:收尾时清除(重试记录是历史性的,保留)。 */
     fun isTransient(name: String): Boolean = when {
-        name.startsWith(RETRY_PREFIX) -> false
-        name == CONNECT -> true
-        name.startsWith(ROUND_PREFIX) -> true
+        name.startsWith(RETRY_PREFIX) || name.startsWith("重试 ") -> false
+        name == CONNECT || name == "连接" -> true
+        name.startsWith(ROUND_PREFIX) || name.startsWith("第 ") -> true
         else -> false
     }
 

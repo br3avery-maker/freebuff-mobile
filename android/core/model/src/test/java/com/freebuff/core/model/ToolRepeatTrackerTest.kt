@@ -56,6 +56,16 @@ class ToolRepeatTrackerTest {
 class MsgStepsTest {
 
     @Test
+    fun `legacy Chinese status steps are still repaired`() {
+        assertTrue(MsgSteps.isTransient("连接"))
+        assertTrue(MsgSteps.isTransient("第 2 轮"))
+        assertFalse(MsgSteps.isTransient("重试 1"))
+        val repaired = MsgSteps.repairAbandoned(ChatMsg("old", "agent", time = "正在生成"))
+        assertEquals("", repaired.time)
+        assertEquals(MsgSteps.INTERRUPTED_NOTE, repaired.text)
+    }
+
+    @Test
     fun `连接与轮次是过程性的`() {
         assertTrue(MsgSteps.isTransient(MsgSteps.CONNECT))
         assertTrue(MsgSteps.isTransient(MsgSteps.round(1)))
