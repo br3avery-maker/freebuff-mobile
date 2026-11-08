@@ -30,9 +30,9 @@ class FreebuffApi @Inject constructor(
 
     /** 拉取官方模型目录。成功且非空时返回网关目录,失败返回分类错误。 */
     suspend fun fetchOfficialModels(): ApiResult<List<OfficialModel>> {
-        if (!isConfigured) return ApiResult.Err(ApiError.NotConfigured("官方网关地址"))
+        if (!isConfigured) return ApiResult.Err(ApiError.NotConfigured("Built-in gateway URL"))
         val url = modelsUrl(gatewayBaseUrl)
-        if (url.isBlank()) return ApiResult.Err(ApiError.NotConfigured("官方网关地址"))
+        if (url.isBlank()) return ApiResult.Err(ApiError.NotConfigured("Built-in gateway URL"))
         return apiCallIo {
             val req = Request.Builder()
                 .url(url)
@@ -44,7 +44,7 @@ class FreebuffApi @Inject constructor(
                 val body = r.body?.string().orEmpty()
                 if (!r.isSuccessful) throw ApiError.Http(r.code, body.take(300))
                 val ids = parseModelIds(body)
-                if (ids.isEmpty()) throw ApiError.Parse("模型列表为空或缺少 id 字段")
+                if (ids.isEmpty()) throw ApiError.Parse("Model list is empty or missing id fields")
                 officialModelsFromIds(ids)
             }
         }

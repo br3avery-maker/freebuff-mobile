@@ -131,7 +131,7 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch {
             when (val r = catalog.refresh()) {
                 is com.freebuff.core.data.network.ApiResult.Ok ->
-                    navigator.showSnack("官方目录已更新 · " + r.data.size + " 个模型")
+                    navigator.showSnack("Built-in catalog updated · " + r.data.size + " models")
                 is com.freebuff.core.data.network.ApiResult.Err ->
                     navigator.showSnack(r.error.userMessage)
             }
@@ -167,11 +167,11 @@ class ChatViewModel @Inject constructor(
         val WHITESPACE_RE = Regex("\\s+")
 
         /** 记忆提取提示词:严格 JSON,便于端侧解析入库。 */
-        const val EXTRACT_PROMPT = """从本轮用户消息中提取值得长期记住的信息:用户偏好与习惯、关键事实与约定、任务进度。
-只记用户明确说出或确认过的内容;绝不要记录助手自己的推测、道歉、工具调用过程,也不要记「无记录/为空/未能找到」这类状态描述。
-用户本轮没有提供新信息时,输出 []。
-用 JSON 数组输出,元素形如 {"type":"long_term"|"short_term","content":"..."};偏好与事实用 long_term,任务进度用 short_term。
-每条 content 写成一句简短陈述,且与用户语言一致(中文对话用中文),最多 5 条;没有值得记的就输出 []。只输出 JSON,不要解释。"""
+        const val EXTRACT_PROMPT = """Extract information worth remembering from this user turn: preferences and habits, key facts and agreements, and task progress.
+Save only what the user explicitly stated or confirmed. Never save the assistant's guesses, apologies, tool activity, or status messages such as no records found.
+If the user supplied no new information, output [].
+Output a JSON array of objects shaped {"type":"long_term"|"short_term","content":"..."}. Use long_term for preferences and facts; short_term for task progress.
+Write each content as a short statement in the user's language, up to 5 entries. If nothing is worth remembering, output []. Output JSON only."""
     }
 
     /** 工具开关(设置页「工具调用」):开启时请求携带工具定义,模型可触发 function calling。 */
@@ -243,7 +243,7 @@ class ChatViewModel @Inject constructor(
         p.deferred.complete(false)
         _pendingConfirmation.value = null
         viewModelScope.launch {
-            completeToolCard(p.sessionId, p.req.callId, "(用户拒绝执行该工具)", isError = true)
+            completeToolCard(p.sessionId, p.req.callId, "(The user denied this tool call)", isError = true)
         }
     }
 
@@ -266,7 +266,7 @@ class ChatViewModel @Inject constructor(
     fun setModel(id: String) {
         viewModelScope.launch {
             settings.setModelId(id)
-            navigator.showSnack("已切换 " + (modelById(id)?.name ?: id))
+            navigator.showSnack("Switched to " + (modelById(id)?.name ?: id))
         }
     }
 
@@ -274,7 +274,7 @@ class ChatViewModel @Inject constructor(
     fun copyText(text: String) {
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         cm.setPrimaryClip(ClipData.newPlainText("freebuff", text))
-        navigator.showSnack("已复制")
+        navigator.showSnack("Copied")
     }
 
     /** 普通发送:把输入框内容发给当前会话。 */
@@ -293,7 +293,7 @@ class ChatViewModel @Inject constructor(
         val userMsg = ChatMsg(uid(), "user", text = text, time = fmtT(System.currentTimeMillis()),
             ctxRepo = ctxRepo, ctxModel = ctxModel)
         val agentMsg = ChatMsg(uid(), "agent", text = "", time = MsgSteps.GENERATING,
-            steps = listOf(MsgStep(MsgSteps.CONNECT, "连接模型并开始生成…")))
+            steps = listOf(MsgStep(MsgSteps.CONNECT, "Connecting to the model…")))
         viewModelScope.launch {
             val session = sessionRepo.get(sessionId) ?: return@launch
             // 会话确认存在后才清输入框,避免向导提交被会话失效吞字
@@ -573,11 +573,11 @@ class ChatViewModel @Inject constructor(
         val hasCustom = customModels.value.isNotEmpty()
         return when {
             !picked && hasCustom ->
-                "⚠ 还没有选择模型\n\n点上方模型条选择一个模型再发送。"
+                "⚠ No model selected\n\nTap the model bar above to choose a model before sending."
             hasCustom ->
-                "⚠ 当前模型不可用\n\n它可能已被删除或缺少端点配置,请在模型列表中选择其他模型。"
+                "⚠ This model is unavailable\n\nIt may have been deleted or may be missing endpoint settings. Choose another model from the list."
             else ->
-                "⚠ 当前没有可用模型\n\n请到 设置 → 自定义模型 添加一个 OpenAI 兼容端点,再在模型列表中选择它。\n(官方模型需要在构建时配置官方网关地址)"
+                "⚠ No models available\n\nAdd an OpenAI-compatible endpoint in Settings → Custom models, then select it from the model list.\n(Built-in models need a gateway configured at build time.)"
         }
     }
 
@@ -635,7 +635,7 @@ class ChatViewModel @Inject constructor(
             // (OpenAI 兼容网关惯例把 system 当首条,中途再插一条行为不一)
             out[0] = ChatMessage.text(
                 "system",
-                out[0].content + "\n\n本次任务关联仓库:" + ctxRepo,
+                out[0].content + "\n\nRepository linked to this task: " + ctxRepo,
             )
         }
         return out
@@ -663,9 +663,9 @@ class ChatViewModel @Inject constructor(
         if (!target.isConfigured) return null
         return { turns, previous ->
             val convo = turns.joinToString("\n") { t ->
-                (if (t.role == "agent") "助手" else "用户") + ":" +
+                (if (t.role == "agent") "Assistant" else "User") + ":" +
                     t.text.take(800) +
-                    t.toolOutputs.joinToString("") { (tool, pair) -> "\n[" + tool + " 结果] " + pair.second.take(300) }
+                    t.toolOutputs.joinToString("") { (tool, pair) -> "\n[" + tool + " result] " + pair.second.take(300) }
             }
             val sb = StringBuilder()
             chatRepo.chatStream(
@@ -677,13 +677,13 @@ class ChatViewModel @Inject constructor(
                 history = listOf(
                     ChatMessage.text(
                         "system",
-                        "把以下对话压缩成简洁摘要,保留:用户的最终目标、已确定的关键决策、重要数据与结论、尚未完成的事项。" +
-                            "若已给出【已有摘要】,它是更早部分的压缩,请把它与新内容合并成一份连贯摘要。直接输出摘要正文,不要客套。",
+                        "Condense the following conversation into a concise summary. Preserve the user's final goal, confirmed decisions, important data and findings, and unfinished work." +
+                            "If an existing summary is provided, combine it with the newer conversation into one coherent summary. Output only the summary text.",
                     ),
                     ChatMessage.text(
                         "user",
-                        (if (previous.isNullOrBlank()) "" else "【已有摘要】\n" + previous.take(4000) + "\n\n") +
-                            "【需要压缩的对话】\n" + convo.take(24000),
+                        (if (previous.isNullOrBlank()) "" else "[Existing summary]\n" + previous.take(4000) + "\n\n") +
+                            "[Conversation to summarize]\n" + convo.take(24000),
                     ),
                 ),
             ).collect { ev ->
@@ -790,7 +790,7 @@ class ChatViewModel @Inject constructor(
             return com.freebuff.core.model.ToolOutcome(
                 com.freebuff.core.model.ToolErrors.report(
                     com.freebuff.core.model.ToolErrors.Kind.MISSING_PARAM, "memory_recall",
-                    "缺少 user_id", "user_id 填系统提示里给出的当前用户 id", attempt, example,
+                    "Missing user_id", "Use the current user ID from the system prompt for user_id", attempt, example,
                 ),
                 isError = true,
             )
@@ -799,7 +799,7 @@ class ChatViewModel @Inject constructor(
             return com.freebuff.core.model.ToolOutcome(
                 com.freebuff.core.model.ToolErrors.report(
                     com.freebuff.core.model.ToolErrors.Kind.MISSING_PARAM, "memory_recall",
-                    "缺少 query", "query 写你要查的事(如「回答长度偏好」)", attempt, example,
+                    "Missing query", "Describe what you want to look up in query (for example, preferred answer length)", attempt, example,
                 ),
                 isError = true,
             )
@@ -810,17 +810,17 @@ class ChatViewModel @Inject constructor(
             if (hits.isEmpty() && a.userId != MemoryStore.LOCAL_USER_ID) {
                 // 访客模式单用户:模型传了别的 user_id 时回退本机记忆,避免检索永远为空
                 hits = memoryEntryRepo.search(a.query, a.topK, a.memoryType, userId = MemoryStore.LOCAL_USER_ID)
-                if (hits.isNotEmpty()) note = "\n(user_id=${a.userId} 无记录,已回退本机记忆)"
+                if (hits.isNotEmpty()) note = "\n(No records for user_id=${a.userId}; using local memory instead)"
             }
             if (hits.isEmpty()) {
                 // 词法检索也可能因说法/语言差异(如中文查询 ↔ 英文记忆)零命中:
                 // 此时给「最近记忆」兜底并明确标注不是直接匹配,避免模型误以为记忆库为空
                 hits = memoryEntryRepo.search("", a.topK, a.memoryType, userId = MemoryStore.LOCAL_USER_ID, bumpHits = false)
-                if (hits.isNotEmpty()) note = "\n(无直接匹配,以下为最近记忆,引用时请说明这是推测)"
+                if (hits.isNotEmpty()) note = "\n(No direct match. These are recent memories; identify any inference when citing them.)"
             }
             com.freebuff.core.model.ToolOutcome(MemoryRecallCodec.formatResult(a.userId, a.query, hits) + note)
         } catch (e: Exception) {
-            com.freebuff.core.model.ToolOutcome("检索记忆失败:" + (e.message ?: e::class.java.simpleName), isError = true)
+            com.freebuff.core.model.ToolOutcome("Memory lookup failed: " + (e.message ?: e::class.java.simpleName), isError = true)
         }
     }
 
@@ -845,7 +845,7 @@ class ChatViewModel @Inject constructor(
                 skipTLS = target.skipTLS,
                 history = listOf(
                     ChatMessage.text("system", EXTRACT_PROMPT),
-                    ChatMessage.text("user", "用户:" + user.text.take(2000) + "\n助手:" + agent.text.take(3000)),
+                    ChatMessage.text("user", "User: " + user.text.take(2000) + "\nAssistant: " + agent.text.take(3000)),
                 ),
             ).collect { ev -> if (ev is AgentEvent.Text) sb.append(ev.chunk) }
             val items = MemoryExtraction.parse(sb.toString())
@@ -871,7 +871,7 @@ class ChatViewModel @Inject constructor(
             com.freebuff.core.model.ToolOutcome(
                 com.freebuff.core.model.ToolErrors.internalError(
                     "save_memory",
-                    "保存记忆失败:" + (e.message ?: e::class.java.simpleName),
+                    "Could not save memory: " + (e.message ?: e::class.java.simpleName),
                     attempt,
                 ),
                 isError = true,
@@ -914,7 +914,7 @@ class ChatViewModel @Inject constructor(
                     // 本轮已有流式输出:半截内容 + 重新生成 = 重复文本,不重试,走收尾提示
                     if (textSink?.isNotEmpty() == true) {
                         if (t is ApiError.StreamIdle) {
-                            appendAgentText(sessionId, "\n\n⚠ 超过 " + (t.idleMs / 1000) + " 秒没有收到新的流式数据,已自动停止生成;以上为已收到的部分回复。")
+                            appendAgentText(sessionId, "\n\n⚠ No new streaming data for " + (t.idleMs / 1000) + " seconds. Generation stopped automatically. The partial reply is shown above.")
                         } else {
                             failAgent(sessionId, t.toApiError().userMessage)
                         }
@@ -945,8 +945,8 @@ class ChatViewModel @Inject constructor(
         sessionRepo.replaceMessage(
             sessionId, last.id,
             last.copy(
-                time = "⟳ 第 " + (retry + 1) + "/" + (RetryPolicy.MAX_RETRIES + 1) + " 次尝试",
-                steps = last.steps + MsgStep(MsgSteps.retry(retry), "上次失败:" + lastError + ";退避后自动重试"),
+                time = "⟳ Attempt " + (retry + 1) + "/" + (RetryPolicy.MAX_RETRIES + 1) + "",
+                steps = last.steps + MsgStep(MsgSteps.retry(retry), "Last failure: " + lastError + "; retrying automatically after a delay"),
             ),
         )
     }
@@ -954,7 +954,7 @@ class ChatViewModel @Inject constructor(
     /** 首条用户消息后自动命名会话(取首行前 12 字);仅当仍是默认标题时生效。 */
     private suspend fun autoTitle(sessionId: String, firstUserText: String) {
         val s = sessionRepo.get(sessionId) ?: return
-        if (s.title.isNotBlank() && s.title != "新对话") return
+        if (s.title.isNotBlank() && s.title != "New chat") return
         val line = firstUserText.trim().lines().firstOrNull().orEmpty()
         if (line.isBlank()) return
         sessionRepo.updateTitle(sessionId, line.take(12) + if (line.length > 12) "…" else "")
@@ -991,7 +991,7 @@ class ChatViewModel @Inject constructor(
         }
         // 流结束时仍在 running 的卡片 = 未等到 tool_result(流提前结束/用户停止),标记未完成
         val cards = if (last.tools.any { it.isRunning }) {
-            last.tools.map { if (it.isRunning) it.copy(state = "error", output = "(未完成)") else it }
+            last.tools.map { if (it.isRunning) it.copy(state = "error", output = "(incomplete)") else it }
         } else last.tools
         // 收尾统一洗一次正文:去掉端点漏出的 chat 模板控制词(如 <|eos|>),
         // 并补上两种「空回复」的说明 —— 用户停止、模型什么都没说(实测都会留下空白气泡)
@@ -1040,6 +1040,6 @@ class ChatViewModel @Inject constructor(
 
     /** 失败收尾:追加错误文案而非覆盖 —— 保留前面轮次已生成的内容与重试轨迹;时间由随后的 finishAgent 落定。 */
     private suspend fun failAgent(sessionId: String, reason: String) {
-        appendAgentText(sessionId, "\n⚠ 请求失败:$reason")
+        appendAgentText(sessionId, "\n⚠ Request failed: $reason")
     }
 }

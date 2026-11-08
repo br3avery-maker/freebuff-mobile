@@ -99,7 +99,7 @@ class HomeViewModel @Inject constructor(
         undoTimer?.cancel()
         viewModelScope.launch {
             sessionRepo.restore(snapshot)
-            navigator.showSnack("已恢复会话")
+            navigator.showSnack("Chat restored")
         }
     }
 

@@ -32,3 +32,6 @@ android/verify/*
 !android/verify/mock_matrix_tls.py
 # 注意:TLS 自签证书本身**不入库** —— 它有有效期(入库等于给发版埋一个「某天突然 TLS 失败」的雷),
 # 私钥也不该进仓库。缺证书时 mock_matrix_tls 会自动调 make_tls_cert.py 生成。
+
+# Local APK copies; downloadable builds are delivered separately.
+/dist/*.apk

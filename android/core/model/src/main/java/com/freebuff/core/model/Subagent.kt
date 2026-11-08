@@ -79,20 +79,20 @@ object Subagent {
 
     /** 子代理的 system 剧本:身份目标 + 工作方式 + 硬性约束 + 输出格式四段。 */
     fun systemPrompt(type: String): String {
-        val tools = TOOL_WHITELIST[type].orEmpty().joinToString("、")
+        val tools = TOOL_WHITELIST[type].orEmpty().joinToString(", ")
         return buildString {
-            appendLine("你是主 agent 派出的子代理,类型 $type,只负责完成被委托的单个子任务,不与用户直接对话。")
-            appendLine("可用工具:$tools。围绕子任务少量多次地使用工具(最多 $MAX_TOOL_ROUNDS 轮),不要做子任务之外的探索。")
-            appendLine("硬性约束:除了列出的工具外不得尝试任何其他工具;不得编造数据与来源;工具失败就如实说明,不要假装成功。")
-            appendLine("输出格式:直接给出结论正文,分点陈述、精炼自包含(读者看不到你的工具过程);不要客套,不要复述任务。")
+            appendLine("You are a subagent assigned by the main agent. Your type is $type. Complete only the delegated subtask; do not talk to the user directly.")
+            appendLine("Available tools: $tools. Use a few focused tool calls at a time, up to $MAX_TOOL_ROUNDS rounds. Do not explore outside the subtask.")
+            appendLine("Constraints: use only the listed tools; do not fabricate data or sources; report tool failures honestly without claiming success.")
+            appendLine("Output a concise, self-contained result with bullet points. The reader cannot see your tool calls. Do not add greetings or repeat the task.")
         }.trim()
     }
 
     /** 子代理的首条 user 消息:任务 + 最小背景 + 期望产出形态。 */
     fun userPrompt(req: Request): String = buildString {
-        append("子任务:").append(req.task)
-        if (req.context.isNotBlank()) append("\n背景(主 agent 提供的最小上下文):").append(req.context.take(2000))
-        if (req.expectedOutput.isNotBlank()) append("\n期望产出:").append(req.expectedOutput)
+        append("Subtask: ").append(req.task)
+        if (req.context.isNotBlank()) append("\nBackground (minimal context from the main agent): ").append(req.context.take(2000))
+        if (req.expectedOutput.isNotBlank()) append("\nExpected output: ").append(req.expectedOutput)
     }
 
     /** 按类型取子代理可用的工具定义(只读白名单硬过滤;未知类型返回空)。 */
@@ -107,10 +107,10 @@ object Subagent {
      * P1 执行引擎上线后无缝切换,无需改提示词。
      */
     fun comingSoonMessage(): String =
-        "spawn_subagent 尚未上线:本次调用未执行,子代理功能正在开发中。请直接基于当前上下文完成该子任务;" +
-            "如需外部信息,可自行使用 web_search / web_fetch 分步完成。"
+        "spawn_subagent is not available yet; this call did not execute. Complete this subtask directly using the current context. " +
+            "For external information, use web_search / web_fetch step by step."
 
     /** spawn_subagent 参数缺失/非法时给主模型的可修正错误文案。 */
     fun invalidArgsMessage(argsJson: String): String =
-        "spawn_subagent 参数无效(需要 agent_type=$TYPE_RESEARCHER|$TYPE_CODE_READER|$TYPE_ANALYST 与非空 task)。原始参数:${argsJson.take(200)}"
+        "Invalid spawn_subagent arguments (requires agent_type=$TYPE_RESEARCHER|$TYPE_CODE_READER|$TYPE_ANALYST and a non-empty task). Received: ${argsJson.take(200)}"
 }

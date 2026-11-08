@@ -26,8 +26,8 @@ fun synthesizedOfficial(id: String): OfficialModel = OfficialModel(
     name = prettifyModelId(id),
     badge = badgeOf(id),
     tier = "full",
-    tierText = "完整访问",
-    desc = "来自官方网关的实时目录",
+    tierText = "Full access",
+    desc = "Live catalog from the built-in gateway",
 )
 
 private val MODEL_ACRONYMS = setOf("gpt", "glm", "llm", "api", "ai", "ds", "vl", "moe", "sdk", "phi")

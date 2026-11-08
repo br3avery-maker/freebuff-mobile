@@ -18,6 +18,12 @@ class MemoryEntryTest {
     ) = MemoryEntry(id = 0, type = type, content = text, createdAt = at, updatedAt = at, hits = hits)
 
     @Test
+    fun `English lookup status does not become memory`() {
+        assertTrue(MemoryExtraction.parse("""[{"content":"No memories related to this request"},{"content":"Called memory_recall with no results"}]""").isEmpty())
+        assertEquals("The user prefers short answers", MemoryExtraction.parse("""[{"content":"The user prefers short answers"}]""").single().content)
+    }
+
+    @Test
     fun `分词 CJK 切 bigram 拉丁按词小写`() {
         val tokens = MemoryRetrieval.tokenize("我喜欢 Kotlin 简洁")
         assertTrue("应含 bigram 我喜", tokens.contains("我喜"))
@@ -78,8 +84,8 @@ class MemoryEntryTest {
         assertEquals(MemoryType.SHORT_TERM, MemoryType.normalize("短期"))
         assertNull(MemoryType.normalize("unknown"))
         assertNull(MemoryType.normalize(null))
-        assertEquals("长期", MemoryType.label(MemoryType.LONG_TERM))
-        assertEquals("短期", MemoryType.label(MemoryType.SHORT_TERM))
+        assertEquals("Long-term", MemoryType.label(MemoryType.LONG_TERM))
+        assertEquals("Short-term", MemoryType.label(MemoryType.SHORT_TERM))
     }
 
     @Test
@@ -107,14 +113,14 @@ class MemoryEntryTest {
         val e1 = entry("用户偏好简洁的回复", type = MemoryType.LONG_TERM)
         val e2 = entry("进行中:记忆检索", type = MemoryType.SHORT_TERM)
         val prompt = MemoryRecallCodec.formatForPrompt(listOf(e1, e2))
-        assertEquals("1. [长期] 用户偏好简洁的回复\n2. [短期] 进行中:记忆检索", prompt)
+        assertEquals("1. [Long-term] 用户偏好简洁的回复\n2. [Short-term] 进行中:记忆检索", prompt)
 
         val result = MemoryRecallCodec.formatResult("local", "偏好", listOf(e1))
-        assertTrue(result.contains("检索到 1 条相关记忆"))
+        assertTrue(result.contains("Found 1 related memories"))
         assertTrue(result.contains("user_id=local"))
-        assertTrue(result.contains("[长期]"))
+        assertTrue(result.contains("[Long-term]"))
 
-        assertTrue(MemoryRecallCodec.formatResult("local", "天气", emptyList()).contains("没有"))
+        assertTrue(MemoryRecallCodec.formatResult("local", "天气", emptyList()).contains("No memories"))
     }
 
     @Test

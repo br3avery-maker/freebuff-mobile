@@ -82,7 +82,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
     }
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().padding(top = 54.dp)) {
-            Text("会话", color = t.text, fontSize = 24.sp, fontWeight = FontWeight.Bold,
+            Text("Chats", color = t.text, fontSize = 24.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(horizontal = 20.dp))
             Spacer(Modifier.height(10.dp))
             SearchRow(query, viewModel::updateQuery)
@@ -96,12 +96,12 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
                 Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
                     Spacer(Modifier.height(120.dp))
                     if (query.isNotBlank()) {
-                        Text("没有匹配的会话", color = t.text2, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                        Text("换个关键字试试,或清空搜索框", color = t.text3, fontSize = 13.sp,
+                        Text("No matching chats", color = t.text2, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Try another keyword or clear the search box", color = t.text3, fontSize = 13.sp,
                             modifier = Modifier.padding(top = 6.dp))
                     } else {
-                        Text("还没有会话", color = t.text2, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                        Text("点右下角「+」发起你的第一个任务", color = t.text3, fontSize = 13.sp,
+                        Text("No chats yet", color = t.text2, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Tap + in the bottom right to start your first task", color = t.text3, fontSize = 13.sp,
                             modifier = Modifier.padding(top = 6.dp))
                     }
                 }
@@ -134,7 +134,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
         // 删除即时生效,底部浮条给一次原样恢复的机会(撤销取消后自动收起)
         undo?.let { snapshot ->
             UndoBar(
-                text = "已删除「" + snapshot.session.title + "」",
+                text = "Deleted “" + snapshot.session.title + "”",
                 onUndo = viewModel::undoDelete,
                 modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 104.dp),
             )
@@ -157,7 +157,7 @@ private fun SearchRow(query: String, onQuery: (String) -> Unit) {
         Spacer(Modifier.width(8.dp))
         Box(Modifier.weight(1f)) {
             if (query.isEmpty()) {
-                Text("搜索会话", color = t.text3, fontSize = 13.sp)
+                Text("Search chats", color = t.text3, fontSize = 13.sp)
             }
             BasicTextField(
                 value = query,
@@ -207,7 +207,7 @@ private fun SwipeSessionRow(
                     .clickable { onDelete() },
                 contentAlignment = Alignment.Center,
             ) {
-                Text("删除", color = t.onDanger, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Text("Delete", color = t.onDanger, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             }
         }
         SessionRow(
@@ -280,7 +280,7 @@ private fun UndoBar(text: String, onUndo: () -> Unit, modifier: Modifier = Modif
             overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
         )
         Text(
-            "撤销", color = t.accent, fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
+            "Undo", color = t.accent, fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
             modifier = Modifier.clip(RFull).clickable { onUndo() }
                 .padding(horizontal = 14.dp, vertical = 8.dp),
         )

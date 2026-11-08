@@ -57,7 +57,7 @@ data class AgentTool(
 
     /** 注入给模型的 description:说明书 + 示例一行(没有示例时就是说明书本身)。 */
     fun schemaDescription(): String =
-        if (example.isBlank()) description else description + "\n例: " + example
+        if (example.isBlank()) description else description + "\nExample: " + example
 
     /** OpenAI function calling 的单个工具定义。 */
     fun toJsonObject(): JSONObject = JSONObject()
@@ -91,161 +91,161 @@ object DefaultTools {
     val ALL: List<AgentTool> = listOf(
         AgentTool(
             name = "web_search",
-            description = "联网搜索:关键词 → 主题摘要 + 相关条目(没搜到时会提示换词)。" +
-                "适合查事实、新闻、概念、最新动态。用户已经给出具体网址时不要用它,直接 web_fetch;" +
-                "要找公开仓库或读仓库里的文件、README 时,改用 github_search_repositories / github_get_readme / github_get_file。",
-            example = "web_search({\"query\": \"android compose 最新版本\"})",
+            description = "Search the web: keywords → topic summary and related results. If none are found, try other keywords. " +
+                "Use for facts, news, concepts, and current information. When the user provides a URL, use web_fetch directly. " +
+                "For public repositories, files, and READMEs, use github_search_repositories / github_get_readme / github_get_file.",
+            example = "web_search({\"query\": \"latest android compose version\"})",
             params = listOf(
                 AgentTool.Param(
-                    "query", "string", "搜索关键词:2~6 个词,用空格分隔,不要整句提问",
+                    "query", "string", "Search keywords: 2–6 words separated by spaces, not a full question",
                     aliases = listOf("q", "keyword", "keywords", "关键词", "查询"),
                 ),
             ),
         ),
         AgentTool(
             name = "web_fetch",
-            description = "抓取指定网址的正文(纯文本,截断到约 4000 字)。" +
-                "用户已经给出链接时直接用它,不要先搜索一遍;要先找链接才用 web_search。" +
-                "目标若是 GitHub 公开仓库里的文件或 README,改用 github_get_file / github_get_readme,不要自己拼 raw.githubusercontent.com 之类的链接。",
+            description = "Fetch plain text from a URL, truncated to about 4000 characters. " +
+                "Use directly when the user provides a link. Search first only when you need to find a link. " +
+                "For files or READMEs in public GitHub repositories, use github_get_file / github_get_readme rather than constructing raw URLs.",
             example = "web_fetch({\"url\": \"https://example.com/post\"})",
             params = listOf(
                 AgentTool.Param(
-                    "url", "string", "完整网址,必须以 http:// 或 https:// 开头",
+                    "url", "string", "Full URL starting with http:// or https://",
                     aliases = listOf("link", "href", "地址", "网址"),
                 ),
             ),
         ),
         AgentTool(
             name = "github_search_repositories",
-            description = "在 GitHub 搜公开仓库(名称/星数/语言/简介)。" +
-                "读某个仓库的文件或 README 之前,先用它确认仓库名拼写正确。",
+            description = "Search public GitHub repositories (name, stars, language, description). " +
+                "Confirm the repository spelling before reading its files or README.",
             example = "github_search_repositories({\"query\": \"compose multiplatform\", \"limit\": 5})",
             params = listOf(
                 AgentTool.Param(
-                    "query", "string", "搜索词:仓库名或技术关键词",
+                    "query", "string", "Search terms: repository name or technical keywords",
                     aliases = listOf("q", "keyword", "keywords", "搜索词"),
                 ),
                 AgentTool.Param(
-                    "limit", "integer", "返回条数", required = false,
+                    "limit", "integer", "Number of results", required = false,
                     min = 1, max = 10, default = "5",
                 ),
             ),
         ),
         AgentTool(
             name = "github_get_file",
-            description = "读 GitHub 公开仓库里的某个文件(纯文本,截断到约 4000 字)。" +
-                "owner 与 repo 要分开写,path 是仓库内的相对路径;只想读 README 时用 github_get_readme。" +
-                "不要用 web_fetch 拼 raw 链接代替它。",
+            description = "Read a file in a public GitHub repository as plain text, truncated to about 4000 characters. " +
+                "Supply owner and repo separately; path is relative to the repository. Use github_get_readme for READMEs. " +
+                "Do not substitute web_fetch with a constructed raw URL.",
             example = "github_get_file({\"owner\": \"CodebuffAI\", \"repo\": \"freebuff\", \"path\": \"README.md\"})",
             params = listOf(
                 AgentTool.Param(
-                    "owner", "string", "仓库所有者(账号或组织名),如 CodebuffAI",
+                    "owner", "string", "Repository owner (account or organization), e.g. CodebuffAI",
                     aliases = listOf("user", "org", "organization", "账号"),
                 ),
                 AgentTool.Param(
-                    "repo", "string", "仓库名,如 freebuff",
+                    "repo", "string", "Repository name, e.g. freebuff",
                     aliases = listOf("repository", "project", "仓库", "仓库名"),
                 ),
                 AgentTool.Param(
-                    "path", "string", "仓库内文件路径,如 README.md 或 src/main.rs",
+                    "path", "string", "Path within the repository, e.g. README.md or src/main.rs",
                     aliases = listOf("file", "filename", "filepath", "文件", "文件路径"),
                 ),
                 AgentTool.Param(
-                    "ref", "string", "分支/标签名;不填用默认分支", required = false,
+                    "ref", "string", "Branch or tag; omit to use the default branch", required = false,
                     aliases = listOf("branch", "tag", "版本"),
                 ),
             ),
         ),
         AgentTool(
             name = "github_get_readme",
-            description = "读 GitHub 公开仓库的 README 全文(截断)。" +
-                "知道仓库但不确定里面有哪些文件时,先用它了解项目;" +
-                "用户问某个仓库的 README 或项目介绍时一律用它,即使对方给了 raw 链接或网页链接,也不要用 web_fetch 代替。",
+            description = "Read a public GitHub repository's README (truncated). " +
+                "Start here when you know the repository but not its files. " +
+                "Always use this for README or project-overview questions, even if the user provides a raw or webpage link.",
             example = "github_get_readme({\"owner\": \"CodebuffAI\", \"repo\": \"freebuff\"})",
             params = listOf(
                 AgentTool.Param(
-                    "owner", "string", "仓库所有者(账号或组织名)",
+                    "owner", "string", "Repository owner (account or organization)",
                     aliases = listOf("user", "org", "organization", "账号"),
                 ),
                 AgentTool.Param(
-                    "repo", "string", "仓库名",
+                    "repo", "string", "Repository name",
                     aliases = listOf("repository", "project", "仓库", "仓库名"),
                 ),
             ),
         ),
         AgentTool(
             name = "calculator",
-            description = "精确计算算术表达式(支持 + - * / 与括号)。数字计算一律用它,不要自己心算。",
+            description = "Evaluate arithmetic exactly (+ - * / and parentheses). Use this for numerical calculations instead of mental arithmetic.",
             example = "calculator({\"expression\": \"(12+8)*3.5\"})",
             params = listOf(
                 AgentTool.Param(
-                    "expression", "string", "算式,如 (12+8)*3.5",
+                    "expression", "string", "Expression, e.g. (12+8)*3.5",
                     aliases = listOf("expr", "formula", "算式", "表达式"),
                 ),
             ),
         ),
         AgentTool(
             name = "current_time",
-            description = "取设备当前的日期与时间(含星期)。问到「现在/今天」时先调它,不要凭记忆猜日期。",
+            description = "Get the device's current date and time, including weekday. Call this for “now” or “today”; do not guess from memory.",
             example = "current_time({})",
         ),
         AgentTool(
             name = "save_memory",
-            description = "更新核心记忆块(跨会话长期生效)。" +
-                "用户说「记住…」「以后都…」「别忘…」时必须调用它(这一步最容易漏),不要只在回复里答应。" +
-                "只记用户明确说出或确认过的信息。" +
-                "block 只能取 persona(你的身份)/user(用户的偏好与习惯)/project(当前任务的焦点与进展);" +
-                "默认整块覆盖(replace=true),想追加就 replace=false。",
-            example = "save_memory({\"block\": \"user\", \"content\": \"偏好:回答尽量短\", \"replace\": false})",
+            description = "Update core memory blocks (persistent across chats). " +
+                "Call when the user asks you to remember something or apply a future preference; do not only acknowledge it. " +
+                "Save only information explicitly stated or confirmed by the user. " +
+                "block must be persona (your identity), user (preferences and habits), or project (task focus and progress). " +
+                "Replaces the whole block by default (replace=true); set replace=false to append.",
+            example = "save_memory({\"block\": \"user\", \"content\": \"Preference: keep answers short\", \"replace\": false})",
             params = listOf(
-                AgentTool.Param("block", "string", "记忆块名", enum = listOf("persona", "user", "project")),
-                AgentTool.Param("content", "string", "要保存的内容:精炼成一句陈述,单块上限约 600 字"),
+                AgentTool.Param("block", "string", "Memory block name", enum = listOf("persona", "user", "project")),
+                AgentTool.Param("content", "string", "Content to save: one concise statement, up to about 600 characters per block"),
                 AgentTool.Param(
-                    "replace", "boolean", "true=覆盖整块(默认),false=追加到现有内容后",
+                    "replace", "boolean", "true replaces the block (default); false appends",
                     required = false, default = "true",
                 ),
             ),
         ),
         AgentTool(
             name = Subagent.TOOL_NAME,
-            description = "派一个只读子代理独立完成子任务(联网调研/读公开仓库/纯计算),它有独立上下文与工具循环,只回结论。" +
-                "适合可并行、自成一体的调研或读取;简单的一步调用别用它。task 必须自包含(它看不到当前对话)。",
-            example = "spawn_subagent({\"agent_type\": \"researcher\", \"task\": \"查 compose 1.8 的主要新特性\"})",
+            description = "Assign a read-only subagent a self-contained task (web research, public repository reading, or calculations). It has its own context and tool loop and returns a result. " +
+                "Use for independent research or reading, not a simple one-step call. task must be self-contained; the subagent cannot see this conversation.",
+            example = "spawn_subagent({\"agent_type\": \"researcher\", \"task\": \"Find the main features in Compose 1.8\"})",
             params = listOf(
                 AgentTool.Param(
-                    "agent_type", "string", "子代理类型",
+                    "agent_type", "string", "Subagent type",
                     enum = listOf("researcher", "code_reader", "analyst"),
                 ),
-                AgentTool.Param("task", "string", "子任务目标:一句话、自包含(子代理看不到当前对话)"),
-                AgentTool.Param("context", "string", "主 agent 认为必要的最小背景摘录", required = false),
-                AgentTool.Param("expected_output", "string", "期望产出形态,如 ≤200 字结论 + 来源列表", required = false),
+                AgentTool.Param("task", "string", "Self-contained subtask goal in one sentence (the subagent cannot see this conversation)"),
+                AgentTool.Param("context", "string", "Minimal background needed from the main agent", required = false),
+                AgentTool.Param("expected_output", "string", "Expected output, e.g. ≤200 words with a source list", required = false),
             ),
         ),
         AgentTool(
             name = AgentLoop.COMPLETION_TOOL,
-            description = "声明任务完成:确认目标真正达成后才调用,summary 写清做了什么、关键结果与遗留事项。" +
-                "调用后本次循环结束。多步任务在完成前不要用它;也不要只是描述了计划就停。",
-            example = "task_completed({\"summary\": \"已查出当前时间并汇报给用户;无遗留\"})",
-            params = listOf(AgentTool.Param("summary", "string", "完成情况:做了什么 + 关键结果 + 遗留事项")),
+            description = "Declare the task complete only when its goal is reached. summary must describe what was done, key results, and remaining work. " +
+                "This ends the current loop. Do not call before a multi-step task is finished or after only describing a plan.",
+            example = "task_completed({\"summary\": \"Checked the current time and reported it to the user; nothing remaining\"})",
+            params = listOf(AgentTool.Param("summary", "string", "Completion summary: work done, key results, and remaining items")),
         ),
         AgentTool(
             name = "memory_recall",
-            description = "按查询检索历史记忆(Top K 条)。回答涉及用户偏好、过往约定、任务进度、以前提供过的事实时,先调它;" +
-                "没检索到也可以再问用户。它负责读,save_memory 负责写,别互相替代。" +
-                "user_id 填系统提示里给出的当前用户 id。",
-            example = "memory_recall({\"user_id\": \"local\", \"query\": \"回答长度偏好\"})",
+            description = "Search historical memories (top K). Call before answering about preferences, prior agreements, task progress, or previously supplied facts. " +
+                "If nothing is found, you may ask the user. This tool reads; save_memory writes. Do not substitute one for the other. " +
+                "Use the current user ID from the system prompt for user_id.",
+            example = "memory_recall({\"user_id\": \"local\", \"query\": \"preferred answer length\"})",
             params = listOf(
-                AgentTool.Param("user_id", "string", "用户标识:填系统提示里的当前 user_id"),
+                AgentTool.Param("user_id", "string", "User identifier: current user_id from the system prompt"),
                 AgentTool.Param(
-                    "query", "string", "当前要回答的问题或查询词",
+                    "query", "string", "Question or search terms to answer now",
                     aliases = listOf("q", "keyword", "查询", "关键词"),
                 ),
                 AgentTool.Param(
-                    "top_k", "integer", "检索条数", required = false,
+                    "top_k", "integer", "Number of results", required = false,
                     min = 1, max = 20, default = "5",
                 ),
                 AgentTool.Param(
-                    "memory_type", "string", "类型过滤:长期=偏好/事实,短期=任务进度",
+                    "memory_type", "string", "Type filter: long_term for preferences/facts, short_term for task progress",
                     required = false, enum = listOf("long_term", "short_term"),
                 ),
             ),
@@ -300,13 +300,13 @@ object DefaultTools {
                 "integer" -> {
                     val n = asInt(raw)
                     if (n == null) {
-                        problems += ToolErrors.ArgProblem.Type(p.name, raw.toString().take(40), "整数")
+                        problems += ToolErrors.ArgProblem.Type(p.name, raw.toString().take(40), "integer")
                     } else if ((p.min != null && n < p.min!!) || (p.max != null && n > p.max!!)) {
                         problems += ToolErrors.ArgProblem.Range(p.name, n.toString(), p.min, p.max)
                     }
                 }
                 "boolean" -> if (asBool(raw) == null) {
-                    problems += ToolErrors.ArgProblem.Type(p.name, raw.toString().take(40), "布尔(true/false)")
+                    problems += ToolErrors.ArgProblem.Type(p.name, raw.toString().take(40), "boolean (true/false)")
                 }
                 else -> {
                     if (p.enum.isNotEmpty() && p.enum.none { it.equals(raw.toString().trim(), ignoreCase = true) }) {

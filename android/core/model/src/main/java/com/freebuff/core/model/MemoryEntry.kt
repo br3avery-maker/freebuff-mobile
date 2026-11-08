@@ -31,7 +31,7 @@ object MemoryType {
     }
 
     /** 注入提示词用的中文标签。 */
-    fun label(type: String): String = if (type == SHORT_TERM) "短期" else "长期"
+    fun label(type: String): String = if (type == SHORT_TERM) "Short-term" else "Long-term"
 }
 
 /** 记忆库常量。 */
@@ -90,9 +90,9 @@ object MemoryRecallCodec {
 
     /** 工具结果文本:回传给模型的编号列表(带类型标签与来源时间)。 */
     fun formatResult(userId: String, query: String, entries: List<MemoryEntry>): String {
-        if (entries.isEmpty()) return "记忆库中没有与「${query.take(60)}」相关的条目(user_id=$userId)。"
+        if (entries.isEmpty()) return "No memories related to “${query.take(60)}” (user_id=$userId)."
         val body = entries.mapIndexed { i, e -> "${i + 1}. [${MemoryType.label(e.type)}] ${e.content.trim()}" }
-        return "检索到 ${entries.size} 条相关记忆(user_id=$userId, query=${query.take(60)}):\n" + body.joinToString("\n")
+        return "Found ${entries.size} related memories (user_id=$userId, query=${query.take(60)}):\n" + body.joinToString("\n")
     }
 
     /** 提示词注入格式:「N. [类型] 内容」。 */
@@ -238,7 +238,8 @@ object MemoryExtraction {
      * 提取器偶尔把助手的空转叙述当事实记下(实测发生过),这里做一道确定性护栏。
      */
     private val META_NOISE = Regex(
-        "(无记录|没有任何记录|未找到相关|记忆库为空|记忆库中|调用.{0,8}(工具|检索)|为空[。.,,])",
+        "(无记录|没有任何记录|未找到相关|记忆库为空|记忆库中|调用.{0,8}(工具|检索)|为空[。.,,]|no records|no related memories|no memories|memory (store|database) is empty|called.{0,20}(tool|memory_recall))",
+        RegexOption.IGNORE_CASE,
     )
 
     /**

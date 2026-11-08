@@ -42,7 +42,7 @@ class ContextPolicyTest {
     fun `compressToolResult 超限保留首尾并标注`() {
         val long = buildString { repeat(2000) { append("x") } } // 2000 ascii ≈ 600 tokens
         val out = ContextPolicy.compressToolResult(long, maxTokens = 100)
-        assertTrue("应包含截断标注", out.contains("中间省略"))
+        assertTrue("应包含截断标注", out.contains("characters omitted"))
         assertTrue("头部应保留", out.startsWith("x"))
         assertTrue("尾部应保留", out.trimEnd().endsWith("x"))
         assertTrue("压缩后应显著变短", out.length < long.length / 2)

@@ -26,7 +26,7 @@ class ToolExecutorsTest {
         assertTrue(r.isError)
         assertTrue("要是固定形状的错误信封", r.content.startsWith(ToolErrors.MARK))
         assertTrue(r.content.contains("BAD_VALUE"))
-        assertTrue("要说清怎么改", r.content.contains("怎么改: "))
+        assertTrue("要说清怎么改", r.content.contains("How to fix: "))
         assertTrue("要给可照抄的示例", r.content.contains("calculator({"))
     }
 
@@ -56,10 +56,10 @@ class ToolExecutorsTest {
         assertTrue(r.isError)
         assertTrue("实际信封: ${r.content}", r.content.startsWith(ToolErrors.MARK))
         assertTrue("实际信封: ${r.content}", env_count(r.content) >= 3)
-        assertTrue("实际信封: ${r.content}", r.content.contains("① 参数名 mode 不存在"))
-        assertTrue("实际信封: ${r.content}", r.content.contains("② 必填参数 query"))
-        assertTrue("实际信封: ${r.content}", r.content.contains("③ 参数 limit 的取值"))
-        assertTrue("每条都要有改法: ${r.content}", r.content.contains("③ limit 取值需在 1~10"))
+        assertTrue("实际信封: ${r.content}", r.content.contains("① Argument name mode is unknown"))
+        assertTrue("实际信封: ${r.content}", r.content.contains("② Required argument query"))
+        assertTrue("实际信封: ${r.content}", r.content.contains("③ Argument limit has value"))
+        assertTrue("每条都要有改法: ${r.content}", r.content.contains("③ limit must be within 1~10"))
     }
 
     /** 数信封里的编号条数(①②③…)。 */

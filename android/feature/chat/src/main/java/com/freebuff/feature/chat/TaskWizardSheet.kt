@@ -60,7 +60,7 @@ fun TaskWizardSheet(
     // 监听的是 StateFlow:设置值由 DAO 异步读入,首帧可能是初始值,拿到真值后会再同步一次。
     val currentModelId by viewModel.currentModelId.collectAsState()
     LaunchedEffect(currentModelId) { viewModel.syncDraftModel() }
-    SheetScaffold("发起任务", "选择仓库 → 选择模型 → 描述任务") {
+    SheetScaffold("Start a task", "Choose a repository → Choose a model → Describe the task") {
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(start = 4.dp, end = 4.dp, bottom = 12.dp)) {
             item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -70,7 +70,7 @@ fun TaskWizardSheet(
                         if (i < 2) Spacer(Modifier.width(6.dp))
                     }
                     Spacer(Modifier.width(10.dp))
-                    Text(listOf("代码仓库", "模型", "描述任务")[d.step], color = t.text2, fontSize = 12.5.sp,
+                    Text(listOf("Repository", "Model", "Describe the task")[d.step], color = t.text2, fontSize = 12.5.sp,
                         fontWeight = FontWeight.SemiBold)
                 }
             }
@@ -90,7 +90,7 @@ fun TaskWizardSheet(
 @Composable
 private fun RepoStep(vm: TaskWizardViewModel, d: TaskDraft) {
     val t = LocalTokens.current
-    val modes = listOf("不关联仓库", "手动输入仓库地址", "Git 账号仓库")
+    val modes = listOf("No repository", "Enter a repository URL", "Git account repositories")
     val repoModes = listOf("none", "manual", "git")
     Row(Modifier.fillMaxWidth().clip(R14).background(t.surface2).padding(4.dp)) {
         modes.forEachIndexed { i, label ->
@@ -107,9 +107,9 @@ private fun RepoStep(vm: TaskWizardViewModel, d: TaskDraft) {
         "manual" -> ManualRepo(vm, d)
         "git" -> GitRepos(vm, d)
         else -> Column {
-            Text("任务将不关联任何代码仓库", color = t.text3, fontSize = 12.5.sp)
+            Text("This task will not be linked to a repository", color = t.text3, fontSize = 12.5.sp)
             Spacer(Modifier.height(6.dp))
-            Text("适合提问、写脚本等不依赖仓库的任务", color = t.text3, fontSize = 11.5.sp)
+            Text("For questions, scripts, and tasks that do not need a repository", color = t.text3, fontSize = 11.5.sp)
         }
     }
 }
@@ -135,7 +135,7 @@ private fun ManualRepo(vm: TaskWizardViewModel, d: TaskDraft) {
                     singleLine = true,
                     decorationBox = { inner ->
                         Box {
-                            if (d.repoUrl.isEmpty()) Text("粘贴 git clone 链接或仓库地址", color = t.text3, fontSize = 13.sp)
+                            if (d.repoUrl.isEmpty()) Text("Paste a git clone link or repository URL", color = t.text3, fontSize = 13.sp)
                             inner()
                         }
                     },
@@ -162,24 +162,24 @@ private fun ManualRepo(vm: TaskWizardViewModel, d: TaskDraft) {
                     Text(norm, color = t.text3, fontSize = 11.sp,
                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                         maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    Text(if (norm == d.repoUrl.trim()) "原样使用" else "已补全",
+                    Text(if (norm == d.repoUrl.trim()) "As entered" else "Completed",
                         color = if (norm == d.repoUrl.trim()) t.text3 else t.accent,
                         fontSize = 10.sp, fontWeight = FontWeight.Bold,
                         modifier = Modifier.clip(RFull).background(t.surface2).padding(horizontal = 8.dp, vertical = 3.dp))
                 }
             }
         } else {
-            Text("宽松原样:按输入原样使用", color = t.text3, fontSize = 11.sp,
+            Text("Use the URL exactly as entered", color = t.text3, fontSize = 11.sp,
                 modifier = Modifier.padding(top = 8.dp))
         }
         if (d.repoBranch.isNotBlank()) {
-            Text("分支 " + d.repoBranch, color = t.accent, fontSize = 10.5.sp, fontWeight = FontWeight.Bold,
+            Text("Branch " + d.repoBranch, color = t.accent, fontSize = 10.5.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.clip(RFull).background(t.accentSoft).padding(horizontal = 9.dp, vertical = 4.dp).padding(top = 8.dp))
         }
         d.repoUrl.takeIf { it.isNotBlank() }?.let { v ->
             val ok = !strict || parseClone(v) != null || v.contains("/")
             if (!ok) {
-                Text("仓库地址不完整,需要包含 主机/所有者/仓库", color = t.danger, fontSize = 11.5.sp,
+                Text("Incomplete repository URL. Include host/owner/repository.", color = t.danger, fontSize = 11.5.sp,
                     modifier = Modifier.padding(top = 8.dp))
             }
         }
@@ -193,9 +193,9 @@ private fun GitRepos(vm: TaskWizardViewModel, d: TaskDraft) {
     val git by vm.git.collectAsState()
     if (!git.connected) {
         Column {
-            Text("尚未关联 Git 账号,去 设置 → 集成 → Git 账号 关联后即可读取仓库", color = t.text3, fontSize = 12.5.sp)
+            Text("Connect a Git account in Settings → Integrations → Git account to load repositories", color = t.text3, fontSize = 12.5.sp)
             Spacer(Modifier.height(10.dp))
-            Text("立即关联", color = t.accentInk, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+            Text("Connect now", color = t.accentInk, fontSize = 12.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.clip(R14).background(t.accent).clickable { navigator.openSheet(AppNavState.SHEET_GIT, AppNavState.SHEET_TASK) }
                     .padding(horizontal = 14.dp, vertical = 8.dp))
         }
@@ -209,19 +209,19 @@ private fun GitRepos(vm: TaskWizardViewModel, d: TaskDraft) {
         }
         when {
             loading -> {
-                Text("正在读取仓库列表…", color = t.text3, fontSize = 12.5.sp)
+                Text("Loading repositories…", color = t.text3, fontSize = 12.5.sp)
                 Spacer(Modifier.height(8.dp))
             }
             error != null -> {
-                Text("仓库列表加载失败:" + error, color = t.warn, fontSize = 12.sp)
+                Text("Could not load repositories: " + error, color = t.warn, fontSize = 12.sp)
                 Spacer(Modifier.height(10.dp))
-                Text("重试", color = t.accentInk, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                Text("Retry", color = t.accentInk, fontSize = 12.sp, fontWeight = FontWeight.Bold,
                     modifier = Modifier.clip(R14).background(t.accent).clickable { vm.loadRepos() }
                         .padding(horizontal = 14.dp, vertical = 8.dp))
                 Spacer(Modifier.height(10.dp))
             }
             repos.isEmpty() -> {
-                Text("该账号暂无可读仓库,可改用「手动输入仓库地址」", color = t.text3, fontSize = 12.5.sp)
+                Text("No accessible repositories. Try entering a repository URL instead.", color = t.text3, fontSize = 12.5.sp)
                 Spacer(Modifier.height(8.dp))
             }
         }
@@ -233,7 +233,7 @@ private fun GitRepos(vm: TaskWizardViewModel, d: TaskDraft) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(r.name, color = t.text, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.weight(1f))
-                    if (on) Text("已选", color = t.accent, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                    if (on) Text("Selected", color = t.accent, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
                 }
                 Text(r.branch + " · " + r.desc, color = t.text3, fontSize = 11.5.sp,
                     modifier = Modifier.padding(top = 3.dp))
@@ -251,22 +251,22 @@ private fun ModelStep(vm: TaskWizardViewModel, d: TaskDraft, all: List<com.freeb
     // 正式构建可能一个模型都没有(未配网关、也没加自定义模型):
     // 给出可执行的下一步,而不是一个空空的「官方模型」标题
     if (all.isEmpty()) {
-        Text("还没有可用模型", color = t.warn, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-        Text("官方模型需在构建时配置网关地址;自定义模型可在 设置 → 自定义模型 里添加一个 OpenAI 兼容端点。",
+        Text("No models available yet", color = t.warn, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        Text("Built-in models need a gateway configured at build time. Add an OpenAI-compatible endpoint in Settings → Custom models.",
             color = t.text3, fontSize = 11.5.sp, lineHeight = 17.sp,
             modifier = Modifier.padding(top = 6.dp))
         return
     }
     val official = all.filter { it.tier != "custom" }
     if (official.isNotEmpty()) {
-        Text("官方模型", color = t.text3, fontSize = 11.5.sp, fontWeight = FontWeight.Medium,
+        Text("Built-in models", color = t.text3, fontSize = 11.5.sp, fontWeight = FontWeight.Medium,
             modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp))
         official.forEach { m ->
             WizardModelRow(m, d.modelId == m.id, t.accent) { vm.update { d.copy(modelId = m.id) } }
         }
     }
     if (all.any { it.tier == "custom" }) {
-        Text("我的模型", color = t.text3, fontSize = 11.5.sp, fontWeight = FontWeight.Medium,
+        Text("My models", color = t.text3, fontSize = 11.5.sp, fontWeight = FontWeight.Medium,
             modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 16.dp, bottom = 6.dp))
         all.filter { it.tier == "custom" }.forEach { m ->
             WizardModelRow(m, d.modelId == m.id, t.warn) { vm.update { d.copy(modelId = m.id) } }
@@ -289,7 +289,7 @@ private fun WizardModelRow(
         Spacer(Modifier.width(8.dp))
         Text(m.name, color = t.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
             modifier = Modifier.weight(1f))
-        if (on) Text("已选", color = t.accent, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+        if (on) Text("Selected", color = t.accent, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
     }
     Spacer(Modifier.height(8.dp))
 }
@@ -309,7 +309,7 @@ private fun DescStep(vm: TaskWizardViewModel, d: TaskDraft, modelList: List<com.
             textStyle = androidx.compose.ui.text.TextStyle(color = t.text, fontSize = 13.5.sp, lineHeight = 20.sp),
             decorationBox = { inner ->
                 Box {
-                    if (d.desc.isEmpty()) Text("例如:修复登录页在深色模式下的对比度问题,并补充单元测试…", color = t.text3, fontSize = 13.sp)
+                    if (d.desc.isEmpty()) Text("For example: Fix the login page contrast in dark mode and add unit tests…", color = t.text3, fontSize = 13.sp)
                     inner()
                 }
             },
@@ -321,13 +321,13 @@ private fun DescStep(vm: TaskWizardViewModel, d: TaskDraft, modelList: List<com.
     }
     Spacer(Modifier.height(10.dp))
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("模型: ", color = t.text3, fontSize = 12.sp)
+        Text("Model: ", color = t.text3, fontSize = 12.sp)
         val picked = modelList.firstOrNull { it.id == d.modelId }?.name ?: d.modelId
-        Text(picked.ifBlank { "未选择" }, color = if (picked.isBlank()) t.warn else t.text2, fontSize = 12.sp,
+        Text(picked.ifBlank { "Not selected" }, color = if (picked.isBlank()) t.warn else t.text2, fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold)
         if (d.repoName.isNotBlank() || d.repoUrl.isNotBlank()) {
             Spacer(Modifier.width(10.dp))
-            Text("仓库: ", color = t.text3, fontSize = 12.sp)
+            Text("Repository: ", color = t.text3, fontSize = 12.sp)
             Text(if (d.repoName.isNotBlank()) d.repoName else d.repoUrl, color = t.text2, fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
@@ -346,7 +346,7 @@ private fun WizardFooter(
     val t = LocalTokens.current
     Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
         if (d.step > 0) {
-            Text("上一步", color = t.text2, fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
+            Text("Back", color = t.text2, fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.clip(RFull).clickable { vm.prev() }.padding(horizontal = 16.dp, vertical = 10.dp))
         }
         Spacer(Modifier.weight(1f))
@@ -354,7 +354,7 @@ private fun WizardFooter(
         // 待补描述时是「禁用态」:底色换成 surface3,文字也必须跟着换成 text2 ——
         // accentInk(浅色主题是白、深色主题是近黑)压在 surface3 上只有 1.2:1,按钮会像没字
         val ready = !last || d.desc.isNotBlank()
-        Text(if (last) "发起任务" else "下一步",
+        Text(if (last) "Start a task" else "Next",
             color = if (ready) t.accentInk else t.text2, fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
             modifier = Modifier.clip(RFull).background(if (ready) t.accent else t.surface3)
                 .clickable {

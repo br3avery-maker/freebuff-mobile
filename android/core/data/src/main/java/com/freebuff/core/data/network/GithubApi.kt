@@ -63,7 +63,7 @@ class GithubApi(
             val o = JSONObject(text)
             val deviceCode = o.optString("device_code")
             val userCode = o.optString("user_code")
-            if (deviceCode.isBlank() || userCode.isBlank()) throw ApiError.Parse("设备码响应缺少字段")
+            if (deviceCode.isBlank() || userCode.isBlank()) throw ApiError.Parse("Device-code response is missing fields")
             DeviceChallenge(
                 deviceCode = deviceCode,
                 userCode = userCode,
@@ -98,9 +98,9 @@ class GithubApi(
                 when (val err = o.optString("error")) {
                     "authorization_pending" -> DevicePoll.Pending
                     "slow_down" -> DevicePoll.SlowDown(o.optInt("interval", 10).coerceAtLeast(1))
-                    "expired_token" -> DevicePoll.Denied("设备码已过期")
-                    "access_denied" -> DevicePoll.Denied("授权被拒绝")
-                    "" -> throw ApiError.Parse("授权响应缺少 access_token")
+                    "expired_token" -> DevicePoll.Denied("Device code expired")
+                    "access_denied" -> DevicePoll.Denied("Authorization denied")
+                    "" -> throw ApiError.Parse("Authorization response is missing access_token")
                     else -> DevicePoll.Denied(err)
                 }
             }
@@ -115,7 +115,7 @@ class GithubApi(
             if (!r.isSuccessful) throw ApiError.Http(r.code, text.take(300))
             val o = JSONObject(text)
             val login = o.optString("login")
-            if (login.isBlank()) throw ApiError.Parse("用户信息缺少 login")
+            if (login.isBlank()) throw ApiError.Parse("User information is missing login")
             GitAccount(login = login, name = o.optString("name").ifBlank { login })
         }
     }
@@ -136,7 +136,7 @@ class GithubApi(
                     name = full,
                     branch = o.optString("default_branch").ifBlank { "main" },
                     desc = o.optString("description").ifBlank {
-                        if (o.optBoolean("private")) "私有仓库" else "公开仓库"
+                        if (o.optBoolean("private")) "Private repository" else "Public repository"
                     },
                 )
             }

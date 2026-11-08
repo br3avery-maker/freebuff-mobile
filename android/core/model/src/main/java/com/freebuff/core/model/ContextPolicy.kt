@@ -63,18 +63,18 @@ object ContextPolicy {
         if (text.length <= headChars + tailChars + 40) return text
         val dropped = text.length - headChars - tailChars
         return text.take(headChars) +
-            "\n…[中间省略约 $dropped 字,可用更精确的参数重新调用工具获取细节]…" +
+            "\n…[About $dropped characters omitted. Call the tool with more precise arguments for details.]…" +
             text.takeLast(tailChars)
     }
 
     /** 提取式摘要回退(LLM 摘要失败时):保留首条用户消息 + 末条回复要点。 */
     fun extractiveSummary(userText: String, agentText: String, turns: Int): String =
         buildString {
-            append("(自动摘要 · 共 $turns 条早期消息)\n")
+            append("(Auto-summary · $turns earlier messages)\n")
             val u = userText.trim().take(300)
-            if (u.isNotEmpty()) append("用户最初请求:").append(u).append('\n')
+            if (u.isNotEmpty()) append("Original request: ").append(u).append('\n')
             val a = agentText.trim().take(400)
-            if (a.isNotEmpty()) append("最新进展:").append(a)
+            if (a.isNotEmpty()) append("Latest progress: ").append(a)
         }.trim()
 }
 

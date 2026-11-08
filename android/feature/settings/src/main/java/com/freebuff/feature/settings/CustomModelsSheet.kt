@@ -51,8 +51,8 @@ fun CustomModelsSheet(viewModel: SettingsViewModel = hiltViewModel()) {
     val repairReport by viewModel.repairReport.collectAsState()
     val repairRestored by viewModel.repairRestored.collectAsState()
     var expanded by remember { mutableStateOf<String?>(null) }
-    SheetScaffold("自定义模型", "管理你自己的 API 端点") {
-        Text("添加自定义模型", color = t.accentInk, fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
+    SheetScaffold("Custom models", "Manage your API endpoints") {
+        Text("Add custom model", color = t.accentInk, fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
             modifier = Modifier.clip(R14).background(t.accent).clickable {
                 navigator.openSheet(AppNavState.SHEET_CUSTOM_FORM)
             }.padding(horizontal = 16.dp, vertical = 9.dp))
@@ -63,7 +63,7 @@ fun CustomModelsSheet(viewModel: SettingsViewModel = hiltViewModel()) {
             Spacer(Modifier.height(12.dp))
         }
         if (customModels.isEmpty()) {
-            Text("还没有自定义模型,点上方按钮添加第一个", color = t.text3, fontSize = 12.5.sp,
+            Text("No custom models yet. Tap the button above to add your first.", color = t.text3, fontSize = 12.5.sp,
                 modifier = Modifier.padding(top = 26.dp))
         } else {
             LazyColumn(contentPadding = PaddingValues(bottom = 20.dp)) {
@@ -99,7 +99,7 @@ private fun CustomRow(
             Spacer(Modifier.width(8.dp))
             Text(c.name, color = t.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f))
-            if (c.id == modelId) Text("当前", color = t.accent, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+            if (c.id == modelId) Text("Current", color = t.accent, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
         }
         Text(c.apiId, color = t.text2, fontSize = 12.sp,
             fontFamily = FontFamily.Monospace,
@@ -108,17 +108,17 @@ private fun CustomRow(
             fontFamily = FontFamily.Monospace,
             maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 3.dp))
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
-            Text("使用", color = t.accentInk, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+            Text("Use", color = t.accentInk, fontSize = 11.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.clip(RFull).background(t.accent).clickable {
                     vm.setModelId(c.id)
                 }.padding(horizontal = 11.dp, vertical = 5.dp))
             Spacer(Modifier.width(8.dp))
-            Text("编辑", color = t.text2, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+            Text("Edit", color = t.text2, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.clip(RFull).background(t.surface2).clickable { onEdit() }
                     .padding(horizontal = 12.dp, vertical = 5.dp))
             Spacer(Modifier.weight(1f))
             if (c.models.isNotEmpty()) {
-                Text((if (isExpanded) "▾" else "▸") + " 上次可用 " + c.models.size + " 个模型",
+                Text((if (isExpanded) "▾" else "▸") + " Last available: " + c.models.size + " models",
                     color = t.accent, fontSize = 10.5.sp, fontWeight = FontWeight.Bold,
                     modifier = Modifier.clip(RFull).background(t.accentSoft).clickable { onToggle(c.id) }
                         .padding(horizontal = 9.dp, vertical = 5.dp))
@@ -135,7 +135,7 @@ private fun CustomRow(
 private fun SnapshotPanel(vm: SettingsViewModel, c: CustomModel) {
     val t = LocalTokens.current
     var bulk by remember { mutableStateOf(false) }
-    Text("快照模型 ID", color = t.text3, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+    Text("Saved model IDs", color = t.text3, fontSize = 11.sp, fontWeight = FontWeight.Medium)
     Spacer(Modifier.height(6.dp))
     c.models.chunked(2).forEach { row ->
         Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
@@ -144,7 +144,7 @@ private fun SnapshotPanel(vm: SettingsViewModel, c: CustomModel) {
         }
     }
     Spacer(Modifier.height(10.dp))
-    Text(if (bulk) "◐ 正在重新测试连接…" else "重新测试连接",
+    Text(if (bulk) "◐ Testing connection again…" else "Test connection again",
         color = if (bulk) t.accent else t.text2, fontSize = 11.5.sp, fontWeight = FontWeight.Bold,
         modifier = Modifier.clip(RFull).background(t.surface2).clickable {
             if (!bulk) {
@@ -184,10 +184,10 @@ private fun SnapshotCell(vm: SettingsViewModel, c: CustomModel, mid: String, mod
             Text(mid, color = t.text, fontSize = 11.5.sp,
                 fontFamily = FontFamily.Monospace,
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            if (mid == c.apiId) Text("当前", color = t.accent, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+            if (mid == c.apiId) Text("Current", color = t.accent, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
         }
         p?.let { pr ->
-            Text("上次连通 " + fmtT(pr.at) + " · " + pr.ms + "ms",
+            Text("Last connected: " + fmtT(pr.at) + " · " + pr.ms + "ms",
                 color = t.text3, fontSize = 9.5.sp, modifier = Modifier.padding(top = 4.dp))
         }
     }
@@ -202,64 +202,64 @@ private fun RepairBanner(vm: SettingsViewModel, rep: com.freebuff.core.model.Rep
     Column(Modifier.fillMaxWidth().clip(R14).background(t.warn.copy(alpha = 0.12f)).padding(12.dp)) {
         if (!confirming) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("⚠ 已自动修复 " + rep.fixed + " 条异常记录", color = t.warn, fontSize = 12.5.sp,
+                Text("⚠ Automatically repaired " + rep.fixed + " invalid records", color = t.warn, fontSize = 12.5.sp,
                     fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                Text(if (showReport) "收起" else "查看报告", color = t.warn, fontSize = 11.sp,
+                Text(if (showReport) "Collapse" else "View report", color = t.warn, fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.clip(RFull).clickable { showReport = !showReport }.padding(horizontal = 8.dp, vertical = 4.dp))
             }
             if (showReport) {
-                Text("原始 " + rep.rawN + " 条 → 保留 " + rep.nowN + " 条(修复 " + rep.fixed + " 条)",
+                Text("Original: " + rep.rawN + " records → Kept: " + rep.nowN + " records (repaired: " + rep.fixed + " records)",
                     color = t.text2, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
                 rep.items.forEach { it ->
                     val line = it.fixes.joinToString(" ") { f ->
                         when (f.code) {
-                            "drop" -> "非对象记录,已移除(无法恢复)"
-                            "id" -> "生成缺失 ID"
-                            "name" -> "补全名称为「未命名模型」"
-                            "field" -> if (f.n > 1) "清理 " + f.n + " 个空字段" else "清理空字段"
-                            "models" -> "过滤 " + f.n + " 项非文本快照"
+                            "drop" -> "Non-object record removed (cannot restore)"
+                            "id" -> "Generated missing ID"
+                            "name" -> "Filled missing name with “Unnamed model”"
+                            "field" -> if (f.n > 1) "Cleaned " + f.n + " empty fields" else "Cleaned empty fields"
+                            "models" -> "Filtered " + f.n + " non-text snapshot entries"
                             else -> f.code
                         }
                     }
-                    Text("· 第 " + it.i + " 条:" + line, color = t.text3, fontSize = 10.5.sp,
+                    Text("· Record " + it.i + ": " + line, color = t.text3, fontSize = 10.5.sp,
                         modifier = Modifier.padding(top = 4.dp, start = 2.dp))
                 }
             }
             Spacer(Modifier.height(10.dp))
-            Text("恢复原始记录", color = t.warn, fontSize = 11.5.sp, fontWeight = FontWeight.Bold,
+            Text("Restore original records", color = t.warn, fontSize = 11.5.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.clip(RFull).background(t.warn.copy(alpha = 0.18f)).clickable {
                     confirming = true
                 }.padding(horizontal = 13.dp, vertical = 6.dp))
         } else {
-            Text("确认恢复原始记录?", color = t.warn, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            Text("以下差异确认后才会恢复(仅本次会话,不写入存档)", color = t.text3, fontSize = 11.sp,
+            Text("Restore original records?", color = t.warn, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text("Review these differences before restoring (this session only; not archived)", color = t.text3, fontSize = 11.sp,
                 modifier = Modifier.padding(top = 3.dp))
             rep.items.forEach { it ->
                 if (it.fixes.any { f -> f.code == "drop" }) {
-                    Text("· 第 " + it.i + " 条:非对象/空记录,已丢弃,无法恢复", color = t.text2, fontSize = 11.sp,
+                    Text("· Record " + it.i + ": Non-object or empty record discarded; cannot restore", color = t.text2, fontSize = 11.sp,
                         modifier = Modifier.padding(top = 7.dp))
                 } else {
                     val raw = it.raw as? CustomModel
                     val fx = it.fixed as? CustomModel
                     val diffs = mutableListOf<String>()
                     if (raw != null && fx != null) {
-                        if (raw.id != fx.id) diffs.add("ID " + raw.id.ifBlank { "空" } + " → " + fx.id)
-                        if (raw.name != fx.name) diffs.add("名称「" + raw.name + "」→「" + fx.name + "」")
-                        if (raw.apiId != fx.apiId) diffs.add("模型 ID「" + raw.apiId + "」→「」(空字段已清理)")
-                        if (raw.base != fx.base) diffs.add("Base URL「" + raw.base + "」→「」(空字段已清理)")
-                        if (raw.models != fx.models) diffs.add("快照过滤 " + (raw.models.size - fx.models.size) + " 项 → 剩 " + fx.models.size + " 项")
+                        if (raw.id != fx.id) diffs.add("ID " + raw.id.ifBlank { "empty" } + " → " + fx.id)
+                        if (raw.name != fx.name) diffs.add("Name “" + raw.name + "” → “" + fx.name + "”")
+                        if (raw.apiId != fx.apiId) diffs.add("Model ID “" + raw.apiId + "” → empty (blank field cleaned)")
+                        if (raw.base != fx.base) diffs.add("Base URL “" + raw.base + "” → empty (blank field cleaned)")
+                        if (raw.models != fx.models) diffs.add("Snapshot filtered: " + (raw.models.size - fx.models.size) + " entries → Remaining: " + fx.models.size + " entries")
                     } else {
                         it.fixes.forEach { f ->
                             when (f.code) {
-                                "id" -> diffs.add("生成缺失 ID")
-                                "name" -> diffs.add("名称「" + (raw?.name ?: "") + "」→「" + (fx?.name ?: "") + "」")
-                                "field" -> diffs.add("Base URL / 模型 ID 空字段已清理")
-                                "models" -> diffs.add("快照过滤 " + f.n + " 项非文本 → 剩 " + (fx?.models?.size ?: 0) + " 项")
+                                "id" -> diffs.add("Generated missing ID")
+                                "name" -> diffs.add("Name “" + (raw?.name ?: "") + "” → “" + (fx?.name ?: "") + "”")
+                                "field" -> diffs.add("Blank Base URL / Model ID fields cleaned")
+                                "models" -> diffs.add("Snapshot filtered: " + f.n + " non-text entries → Remaining: " + (fx?.models?.size ?: 0) + " entries")
                             }
                         }
                     }
-                    Text("· 第 " + it.i + " 条 原始 → 已修复:", color = t.text2, fontSize = 11.sp,
+                    Text("· Record " + it.i + " original → repaired: ", color = t.text2, fontSize = 11.sp,
                         modifier = Modifier.padding(top = 7.dp))
                     diffs.forEach { d ->
                         Text("    " + d, color = t.text3, fontSize = 10.5.sp,
@@ -269,10 +269,10 @@ private fun RepairBanner(vm: SettingsViewModel, rep: com.freebuff.core.model.Rep
             }
             Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("取消", color = t.text3, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                Text("Cancel", color = t.text3, fontSize = 12.sp, fontWeight = FontWeight.Bold,
                     modifier = Modifier.clip(RFull).clickable { confirming = false }.padding(horizontal = 18.dp, vertical = 8.dp))
                 Spacer(Modifier.width(10.dp))
-                Text("确认恢复", color = t.accentInk, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                Text("Confirm restore", color = t.accentInk, fontSize = 12.sp, fontWeight = FontWeight.Bold,
                     modifier = Modifier.clip(RFull).background(t.warn).clickable { vm.restoreRaw() }.padding(horizontal = 20.dp, vertical = 8.dp))
             }
         }

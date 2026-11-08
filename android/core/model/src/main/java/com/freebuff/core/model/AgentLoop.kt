@@ -45,27 +45,27 @@ object AgentLoop {
     const val REMINDER_ROLE = "user"
 
     /** 提醒消息的统一前缀(避免模型把它当成用户本人的新指令)。 */
-    const val REMINDER_PREFIX = "(系统提醒) "
+    const val REMINDER_PREFIX = "(System reminder) "
 
     /** 提醒模型继续时的消息(进协议、不进可见正文)。 */
     const val NUDGE_TEXT = REMINDER_PREFIX +
-        "你上一轮只输出了文字,没有调用任何工具,但任务还没有声明完成。" +
-        "请继续推进:调用工具完成下一步;若确实已全部完成,调用 " + COMPLETION_TOOL + " 并写好 summary。" +
-        "不要只描述计划,也不要重复已经说过的内容。"
+        "You only produced text in the previous round without using tools, but the task has not been declared complete. " +
+        "Continue: use tools for the next step. If everything is truly complete, call " + COMPLETION_TOOL + " with a clear summary. " +
+        "Do not only describe plans or repeat what you have already said."
 
     /** 轮次上限的可见提示(追加到正文,让用户知道为什么停了以及怎么继续)。 */
     const val ROUND_LIMIT_NOTE =
-        "(已达 $MAX_TOOL_ROUNDS 轮工具调用上限,已停止继续执行;回复「继续」可以接着做)"
+        "(Reached the limit of $MAX_TOOL_ROUNDS tool rounds. Send “continue” to resume.)"
 
     /** 重复调用时的提醒(进协议、不进正文)。 */
     const val REPEAT_NUDGE_TEXT = REMINDER_PREFIX +
-        "你这一轮调用的工具与参数和之前完全一样,重复执行不会带来新信息。" +
-        "请改用不同参数、换用其他工具,或在确实完成时调用 " + COMPLETION_TOOL + " 收工;" +
-        "如果用户的问题其实已经能回答,直接用文字作答即可,不要重放同一组调用。"
+        "You called the same tools with the same arguments as before. Repeating them will not produce new information. " +
+        "Change arguments, use other tools, or, if the task is complete, call " + COMPLETION_TOOL + " to finish. " +
+        "If you can already answer the user's question, answer directly without replaying the same calls."
 
     /** 重复调用停下的可见提示。 */
     fun repeatStopNote(rounds: Int): String =
-        "(检测到连续 $rounds 轮重复调用同样的工具,已停止;请在输入框补充新指令或换个目标再继续)"
+        "(Detected $rounds consecutive rounds of identical tool calls. Stopped; add new instructions or change the goal to continue.)"
 
     sealed interface Decision {
         /** 继续下一轮。 */

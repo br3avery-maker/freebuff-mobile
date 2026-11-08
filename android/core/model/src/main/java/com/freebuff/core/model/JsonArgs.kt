@@ -37,7 +37,7 @@ object JsonArgs {
     fun parse(raw: String?): Result {
         val text = (raw ?: "").trim()
         if (text.isEmpty()) return Result.Ok(JSONObject())
-        if (text.length > MAX_LEN) return Result.Invalid("参数过长(> ${MAX_LEN} 字符)", text.take(300))
+        if (text.length > MAX_LEN) return Result.Invalid("Arguments too long (> ${MAX_LEN} characters)", text.take(300))
         // 1) 原样(但键名里带智能引号时视为「引号用错了」—— org.json 宽容到会把 “key” 当成键,
         //    这样解析出来的对象其实没有模型想要的字段,必须送去修复)
         asObject(text)?.let { if (!hasSmartQuotedKey(it)) return Result.Ok(it) }
@@ -48,7 +48,7 @@ object JsonArgs {
             asArray(fixed)?.let { return Result.Ok(JSONObject().put("items", it), repaired = true) }
         }
         asArray(text)?.let { return Result.Ok(JSONObject().put("items", it)) }
-        return Result.Invalid("参数不是合法的 JSON 对象", text.take(300))
+        return Result.Invalid("Arguments must be a valid JSON object", text.take(300))
     }
 
     /**

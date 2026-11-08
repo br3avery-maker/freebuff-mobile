@@ -61,10 +61,10 @@ fun CustomModelFormSheet(editId: String? = null, viewModel: SettingsViewModel = 
     val editing = customModels.firstOrNull { it.id == editId }
     val f = remember(editId, editing?.id) { FState(editing) }
     Column(Modifier.fillMaxSize()) {
-        Text(if (editing != null) "编辑自定义模型" else "添加自定义模型",
+        Text(if (editing != null) "Edit custom model" else "Add custom model",
             color = t.text, fontSize = 17.sp, fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(horizontal = 2.dp, vertical = 4.dp))
-        Text("填写端点后可用「测试连接」拉取可用模型", color = t.text3, fontSize = 12.sp,
+        Text("Enter an endpoint, then use Test connection to load available models", color = t.text3, fontSize = 12.sp,
             modifier = Modifier.padding(start = 2.dp, end = 2.dp, bottom = 6.dp))
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = 14.dp)) {
             FormBasic(f)
@@ -113,22 +113,22 @@ private class FState(edit: CustomModel?) {
 
 @Composable
 private fun FormBasic(f: FState) {
-    SectionLabel2("基本信息")
-    Field("显示名称", f.name) { f.name = it }
+    SectionLabel2("Basic information")
+    Field("Display name", f.name) { f.name = it }
 }
 
 @Composable
 private fun FormAbility(f: FState) {
-    SectionLabel2("能力")
+    SectionLabel2("Capabilities")
     val t = LocalTokens.current
-    Text("上下文长度", color = t.text3, fontSize = 11.sp, modifier = Modifier.padding(bottom = 6.dp, start = 2.dp))
+    Text("Context length", color = t.text3, fontSize = 11.sp, modifier = Modifier.padding(bottom = 6.dp, start = 2.dp))
     Row(Modifier.horizontalScroll(rememberScrollState())) {
         listOf("4k", "8k", "16k", "32k", "128k", "524k").forEach { o ->
             Chip(o, f.ctx == o) { f.ctx = o }
         }
     }
     Spacer(Modifier.height(8.dp))
-    Text("请求超时", color = t.text3, fontSize = 11.sp, modifier = Modifier.padding(bottom = 6.dp, start = 2.dp))
+    Text("Request timeout", color = t.text3, fontSize = 11.sp, modifier = Modifier.padding(bottom = 6.dp, start = 2.dp))
     Row(Modifier.horizontalScroll(rememberScrollState())) {
         listOf("10s", "30s", "60s", "120s", "300s").forEach { o ->
             Chip(o, f.timeout == o) { f.timeout = o }
@@ -168,7 +168,7 @@ private fun Field(label: String, value: String, onFocusedEdit: (() -> Unit)? = n
 @Composable
 private fun FormEndpoint(viewModel: SettingsViewModel, f: FState) {
     val t = LocalTokens.current
-    SectionLabel2("端点")
+    SectionLabel2("Endpoint")
     Column(Modifier.fillMaxWidth().clip(R14).background(t.surface2).padding(horizontal = 12.dp, vertical = 4.dp)) {
         Text("Base URL", color = t.text3, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
         BasicTextField(value = f.base, onValueChange = {
@@ -183,12 +183,12 @@ private fun FormEndpoint(viewModel: SettingsViewModel, f: FState) {
     if (f.base.isNotBlank()) {
         val full = endpointUrl(norm)
         val isDirect = norm.lowercase().endsWith("/chat/completions")
-        Text((if (isDirect) "● 完整路径 · 直接使用  " else "● 自动拼接  ") + full,
+        Text((if (isDirect) "● Full path · Used directly  " else "● Automatically appended  ") + full,
             color = if (isDirect) t.accent else t.text3, fontSize = 10.5.sp,
             fontFamily = FontFamily.Monospace, lineHeight = 14.sp,
             modifier = Modifier.padding(top = 6.dp, start = 4.dp, bottom = 8.dp))
     } else {
-        Text("输入后实时显示请求地址 · 支持直接粘贴中转站完整路径", color = t.text3, fontSize = 10.5.sp,
+        Text("Request URL preview · You can paste a full endpoint path", color = t.text3, fontSize = 10.5.sp,
             modifier = Modifier.padding(top = 6.dp, start = 4.dp, bottom = 8.dp))
     }
     Spacer(Modifier.height(6.dp))
@@ -206,7 +206,7 @@ private fun FormEndpoint(viewModel: SettingsViewModel, f: FState) {
                     else PasswordVisualTransformation(),
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp))
         }
-        Text(if (f.keyVisible) "隐藏" else "显示", color = t.text2, fontSize = 11.sp,
+        Text(if (f.keyVisible) "Hide" else "Show", color = t.text2, fontSize = 11.sp,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.clip(RFull).clickable { f.keyVisible = !f.keyVisible }.padding(horizontal = 10.dp, vertical = 4.dp))
     }
@@ -215,7 +215,7 @@ private fun FormEndpoint(viewModel: SettingsViewModel, f: FState) {
     Row(verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth().clip(R14).background(t.surface2).padding(horizontal = 12.dp, vertical = 4.dp)) {
         Column(Modifier.weight(1f)) {
-            Text("模型 ID", color = t.text3, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
+            Text("Model ID", color = t.text3, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
             BasicTextField(value = f.apiId, onValueChange = {
                 f.apiId = it
                 f.invalidateTest()
@@ -224,14 +224,14 @@ private fun FormEndpoint(viewModel: SettingsViewModel, f: FState) {
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp))
         }
-        Text(if (f.fetchPhase == "loading") "◐ 拉取中" else "拉取列表",
+        Text(if (f.fetchPhase == "loading") "◐ Loading" else "Fetch models",
             color = if (f.fetchPhase == "loading") t.text3 else t.accentInk, fontSize = 11.sp,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.clip(RFull)
                 .background(if (f.fetchPhase == "loading") t.surface3 else t.accent)
                 .clickable(enabled = f.fetchPhase != "loading") {
                     if (f.base.isBlank()) {
-                        f.fetchErr = "请先填写 Base URL,再拉取模型列表"
+                        f.fetchErr = "Enter a Base URL before fetching models"
                     } else {
                         f.fetchErr = null
                         f.fetchPhase = "loading"
@@ -247,7 +247,7 @@ private fun FormEndpoint(viewModel: SettingsViewModel, f: FState) {
                             when (r) {
                                 is ApiResult.Ok -> {
                                     f.pickList = r.data
-                                    if (r.data.isEmpty()) f.fetchErr = "端点返回空模型列表,可直接手动填写"
+                                    if (r.data.isEmpty()) f.fetchErr = "The endpoint returned no models. Enter a model ID manually."
                                 }
                                 is ApiResult.Err -> f.fetchErr = r.error.userMessage
                             }
@@ -263,8 +263,8 @@ private fun FormEndpoint(viewModel: SettingsViewModel, f: FState) {
     Row(Modifier.fillMaxWidth().clip(R14).background(t.surface2).clickable { f.skipTLS = !f.skipTLS }
         .padding(horizontal = 12.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text("跳过 TLS 证书校验", color = t.text, fontSize = 13.sp)
-            Text("仅用于本地自签名端点,请谨慎开启", color = t.text3, fontSize = 10.5.sp,
+            Text("Skip TLS certificate verification", color = t.text, fontSize = 13.sp)
+            Text("Only for local self-signed endpoints. Enable with care.", color = t.text3, fontSize = 10.5.sp,
                 modifier = Modifier.padding(top = 2.dp))
         }
         Box(Modifier.size(width = 40.dp, height = 23.dp).clip(RFull)
@@ -278,13 +278,13 @@ private fun FormAdvanced(f: FState) {
     val t = LocalTokens.current
     Row(Modifier.fillMaxWidth().clickable { f.advOpen = !f.advOpen }.padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically) {
-        Text("高级选项", color = t.text2, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold,
+        Text("Advanced options", color = t.text2, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold,
             modifier = Modifier.weight(1f))
         Text(if (f.advOpen) "▾" else "▸", color = t.text3, fontSize = 13.sp)
     }
     if (f.advOpen) {
         Column(Modifier.fillMaxWidth().clip(R14).background(t.surface2).padding(horizontal = 12.dp, vertical = 4.dp)) {
-            Text("自定义请求头(JSON,每行一个,可选)", color = t.text3, fontSize = 11.sp,
+            Text("Custom headers (JSON, one per line, optional)", color = t.text3, fontSize = 11.sp,
                 modifier = Modifier.padding(top = 8.dp))
             BasicTextField(value = f.headers, onValueChange = { f.headers = it },
                 textStyle = TextStyle(color = t.text, fontSize = 12.5.sp,
@@ -302,9 +302,9 @@ private fun ModelPickList(f: FState, list: List<String>) {
     Column(Modifier.fillMaxWidth().padding(top = 6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth().clickable { f.pickList = null }.padding(vertical = 6.dp)) {
-            Text("端点可用模型 " + list.size + " 个 · 点选填入", color = t.text3, fontSize = 10.5.sp,
+            Text("Available models: " + list.size + " · Tap to select", color = t.text3, fontSize = 10.5.sp,
                 modifier = Modifier.weight(1f).padding(start = 2.dp))
-            Text("收起 ▴", color = t.text3, fontSize = 10.5.sp, modifier = Modifier.padding(start = 8.dp))
+            Text("Collapse ▴", color = t.text3, fontSize = 10.5.sp, modifier = Modifier.padding(start = 8.dp))
         }
         // 有界高度 + LazyColumn:大列表(数百个模型)不会撑爆弹窗,内部滚动浏览
         LazyColumn(Modifier.fillMaxWidth().heightIn(max = 240.dp).clip(R14)
@@ -325,7 +325,7 @@ private fun ModelPickList(f: FState, list: List<String>) {
                     Text(mid, color = if (cur) t.accent else t.text, fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f))
-                    if (cur) Text("已选", color = t.accent, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                    if (cur) Text("Selected", color = t.accent, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
                 }
                 if (i < list.lastIndex) Spacer(Modifier.height(2.dp))
             }
@@ -337,7 +337,7 @@ private fun ModelPickList(f: FState, list: List<String>) {
 @Composable
 private fun FormTest(viewModel: SettingsViewModel, f: FState) {
     val t = LocalTokens.current
-    SectionLabel2("测试连接")
+    SectionLabel2("Test connection")
     f.err?.let {
         Text(it, color = t.danger, fontSize = 11.5.sp, modifier = Modifier.padding(bottom = 8.dp))
     }
@@ -345,18 +345,18 @@ private fun FormTest(viewModel: SettingsViewModel, f: FState) {
     if (f.testPhase != "loading" && !f.tested && f.resultList == null && f.err == null &&
         f.name.isNotBlank() && f.apiId.isNotBlank() && f.base.isNotBlank()
     ) {
-        Text("提示:修改端点或密钥后请重新测试连接", color = t.text3, fontSize = 10.5.sp,
+        Text("Test again after changing the endpoint or API key", color = t.text3, fontSize = 10.5.sp,
             modifier = Modifier.padding(bottom = 6.dp))
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(if (f.testPhase == "loading") "◐ 正在请求 " + endpointUrl(normEndpoint(f.base)) + " …"
-            else "测试连接",
+        Text(if (f.testPhase == "loading") "◐ Requesting " + endpointUrl(normEndpoint(f.base)) + " …"
+            else "Test connection",
             color = if (f.testPhase == "loading") t.accent else t.accentInk, fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.clip(RFull).background(if (f.testPhase == "loading") t.surface2 else t.accent)
                 .clickable(enabled = f.testPhase != "loading") {
                     if (f.name.isBlank() || f.apiId.isBlank() || f.base.isBlank()) {
-                        f.err = "请先填写 显示名称 / 模型 ID / Base URL 三项必填内容"
+                        f.err = "Fill in Display name, Model ID, and Base URL first"
                     } else {
                         f.err = null
                         f.testPhase = "loading"
@@ -386,7 +386,7 @@ private fun FormTest(viewModel: SettingsViewModel, f: FState) {
                 }.padding(horizontal = 15.dp, vertical = 8.dp))
     }
     if (f.testPhase == "ok") {
-        Text("连接成功 · 返回 200 · " + (f.ms ?: 0) + "ms",
+        Text("Connected · HTTP 200 · " + (f.ms ?: 0) + "ms",
             color = t.ok, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(top = 8.dp, start = 2.dp))
     }
@@ -397,10 +397,10 @@ private fun FormTest(viewModel: SettingsViewModel, f: FState) {
 private fun TestResultGrid(f: FState, list: List<String>) {
     val t = LocalTokens.current
     Spacer(Modifier.height(10.dp))
-    Text("可用模型 /v1/models · 点选填入模型 ID", color = t.text3, fontSize = 10.5.sp,
+    Text("Available models from /v1/models · Tap to fill in Model ID", color = t.text3, fontSize = 10.5.sp,
         modifier = Modifier.padding(start = 2.dp, bottom = 6.dp))
     if (list.isEmpty()) {
-        Text("端点返回空模型列表,可直接手动填写模型 ID", color = t.text3, fontSize = 10.5.sp,
+        Text("The endpoint returned no models. Enter a model ID manually.", color = t.text3, fontSize = 10.5.sp,
             modifier = Modifier.padding(start = 2.dp))
         return
     }
@@ -416,7 +416,7 @@ private fun TestResultGrid(f: FState, list: List<String>) {
                         .clickable { f.apiId = mid }.padding(9.dp)) {
                         Text(mid, color = t.text, fontSize = 10.5.sp,
                             fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (cur) Text("已填", color = t.accent, fontSize = 9.sp, fontWeight = FontWeight.Bold,
+                        if (cur) Text("Filled in", color = t.accent, fontSize = 9.sp, fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(top = 2.dp))
                     }
                     Spacer(Modifier.width(6.dp))
@@ -431,8 +431,8 @@ private fun TestResultGrid(f: FState, list: List<String>) {
 private fun FormSnapshot(f: FState, editing: CustomModel) {
     val t = LocalTokens.current
     val models = editing.models
-    SectionLabel2("已保存快照")
-    Text("上次可用 " + models.size + " 个模型 · 已随记录保存", color = t.text3, fontSize = 11.sp,
+    SectionLabel2("Snapshot saved")
+    Text("Last available: " + models.size + " models · Saved with this record", color = t.text3, fontSize = 11.sp,
         modifier = Modifier.padding(start = 2.dp, bottom = 6.dp))
     Column {
         models.chunked(2).forEach { row ->
@@ -444,7 +444,7 @@ private fun FormSnapshot(f: FState, editing: CustomModel) {
                         .clickable { f.apiId = mid }.padding(9.dp)) {
                         Text(mid, color = t.text, fontSize = 10.5.sp, fontFamily = FontFamily.Monospace,
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (cur) Text("当前", color = t.accent, fontSize = 9.sp, fontWeight = FontWeight.Bold,
+                        if (cur) Text("Current", color = t.accent, fontSize = 9.sp, fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(top = 2.dp))
                     }
                     Spacer(Modifier.width(6.dp))
@@ -454,7 +454,7 @@ private fun FormSnapshot(f: FState, editing: CustomModel) {
         }
     }
     if (models.isNotEmpty()) {
-        Text("从快照重建", color = t.accentInk, fontSize = 11.5.sp, fontWeight = FontWeight.Bold,
+        Text("Restore from snapshot", color = t.accentInk, fontSize = 11.5.sp, fontWeight = FontWeight.Bold,
             modifier = Modifier.clip(RFull).background(t.accent).clickable {
                 f.apiId = models.first()
                 f.err = null
@@ -473,21 +473,21 @@ private fun FormActions(
     Row(Modifier.fillMaxWidth().background(t.elev).padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically) {
         if (editing != null) {
-            Text("删除", color = t.danger, fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
+            Text("Delete", color = t.danger, fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.clip(RFull).clickable {
                     viewModel.deleteCustomModel(editing.id)
                     navigator.closeSheet()
-                    navigator.showSnack("已删除 " + editing.name)
+                    navigator.showSnack("Deleted " + editing.name)
                 }.padding(horizontal = 16.dp, vertical = 10.dp))
         }
         Spacer(Modifier.weight(1f))
-        Text("取消", color = t.text2, fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
+        Text("Cancel", color = t.text2, fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
             modifier = Modifier.clip(RFull).clickable { navigator.closeSheet() }.padding(horizontal = 18.dp, vertical = 10.dp))
         Spacer(Modifier.width(6.dp))
-        Text("保存", color = t.accentInk, fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
+        Text("Save", color = t.accentInk, fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
             modifier = Modifier.clip(RFull).background(t.accent).clickable {
                 if (f.name.isBlank() || f.apiId.isBlank() || f.base.isBlank()) {
-                    f.err = "请先填写 显示名称 / 模型 ID / Base URL 三项必填内容"
+                    f.err = "Fill in Display name, Model ID, and Base URL first"
                 } else {
                     val snap = if (f.tested && f.resultList != null) f.resultList!!
                     else (editing?.models ?: emptyList())
@@ -503,7 +503,7 @@ private fun FormActions(
                     )
                     if (editing == null) viewModel.addCustomModel(rec) else viewModel.updateCustomModel(rec)
                     navigator.closeSheet()
-                    navigator.showSnack(if (editing == null) "已添加 " + rec.name else "已保存 " + rec.name)
+                    navigator.showSnack(if (editing == null) "Added " + rec.name else "Saved " + rec.name)
                 }
             }.padding(horizontal = 24.dp, vertical = 10.dp))
     }

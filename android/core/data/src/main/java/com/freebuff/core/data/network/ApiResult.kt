@@ -22,19 +22,19 @@ import javax.net.ssl.SSLException
 sealed class ApiError(message: String, cause: Throwable? = null) : Exception(message, cause) {
 
     /** 连接/读取超时。 */
-    class Timeout(cause: Throwable? = null) : ApiError("连接超时,请检查网络或端点可达性", cause)
+    class Timeout(cause: Throwable? = null) : ApiError("Connection timed out. Check your network and endpoint.", cause)
 
     /** 无法建立连接(拒绝/不可达)。 */
-    class Unreachable(cause: Throwable? = null) : ApiError("无法连接到服务器,请检查端点与网络", cause)
+    class Unreachable(cause: Throwable? = null) : ApiError("Could not connect to the server. Check your endpoint and network.", cause)
 
     /** DNS 解析失败。 */
-    class Dns(cause: Throwable? = null) : ApiError("无法解析主机,请检查端点地址", cause)
+    class Dns(cause: Throwable? = null) : ApiError("Could not resolve the host. Check the endpoint URL.", cause)
 
     /** TLS 证书校验失败。 */
-    class Tls(cause: Throwable? = null) : ApiError("TLS 证书校验失败,可在自定义模型中开启「跳过 TLS 校验」", cause)
+    class Tls(cause: Throwable? = null) : ApiError("TLS certificate verification failed. For a local self-signed endpoint, you can enable Skip TLS certificate verification in custom model settings.", cause)
 
     /** 流式空闲超时:连续长时间没有任何事件到达(连接存活但不吐数据)。 */
-    class StreamIdle(val idleMs: Long) : ApiError("连接超时:超过 " + (idleMs / 1000) + " 秒没有收到任何流式数据,已自动停止。请检查端点状态或换个模型再试")
+    class StreamIdle(val idleMs: Long) : ApiError("Connection timed out: no streaming data for " + (idleMs / 1000) + " seconds. Stopped automatically. Check the endpoint or try another model.")
 
     /** HTTP 非 2xx:保留状态码与响应片段,便于定位鉴权/路径/限流问题。 */
     class Http(
@@ -45,7 +45,7 @@ sealed class ApiError(message: String, cause: Throwable? = null) : Exception(mes
 
     /** 2xx 但响应结构无法解析。 */
     class Parse(detail: String = "") :
-        ApiError(if (detail.isBlank()) "响应格式无法解析" else "响应格式无法解析:$detail")
+        ApiError(if (detail.isBlank()) "Could not parse the response" else "Could not parse the response: $detail")
 
     /** 必要配置缺失(网关地址 / 更新源 / Git 授权)。 */
     class NotConfigured(what: String) : ApiError(withConfiguredSuffix(what))
@@ -56,19 +56,19 @@ sealed class ApiError(message: String, cause: Throwable? = null) : Exception(mes
      * OkHttp 的英文异常原文。
      */
     class CleartextBlocked(cause: Throwable? = null) :
-        ApiError("地址不被允许:Android 默认禁止明文 HTTP,请把该地址换成 https", cause)
+        ApiError("URL not allowed: Android blocks plain HTTP by default. Use https instead.", cause)
 
     /**
      * 下载下来的安装包与清单里的指纹不符(被截断 / 被掉包 / 服务端给了错误页)。
      * 这类失败绝不能把文件交给安装器 —— 那等于放行一个来源不明的包,所以直接丢弃重下。
      */
     class ChecksumFailed(expected: String, actual: String) : ApiError(
-        "安装包校验失败:下载内容与官方指纹不一致(期望 " + expected.take(12) + "…,实际 " +
-            (if (actual.isBlank()) "无法计算" else actual.take(12) + "…") + "),已丢弃,请重试",
+        "APK verification failed: the download does not match the expected fingerprint (expected " + expected.take(12) + "…, received " +
+            (if (actual.isBlank()) "unavailable" else actual.take(12) + "…") + "). Discarded; please retry.",
     )
 
     /** 调用方主动取消。 */
-    class Cancelled : ApiError("请求已取消")
+    class Cancelled : ApiError("Request cancelled")
 
     /**
      * 未归类的异常。
@@ -77,12 +77,12 @@ sealed class ApiError(message: String, cause: Throwable? = null) : Exception(mes
      */
     class Unknown(cause: Throwable? = null) : ApiError(
         cause?.message?.takeIf { it.isNotBlank() }
-            ?: "请求失败(" + (cause?.javaClass?.simpleName ?: "未知错误") + ")",
+            ?: "Request failed (" + (cause?.javaClass?.simpleName ?: "Unknown error") + ")",
         cause,
     )
 
     /** 兼容旧调用:等价于 [message] 的非空字符串。 */
-    val userMessage: String get() = message ?: "请求失败"
+    val userMessage: String get() = message ?: "Request failed"
 }
 
 /**
@@ -90,8 +90,8 @@ sealed class ApiError(message: String, cause: Throwable? = null) : Exception(mes
  * (「GitHub OAuth client_id 未配置」而不是「client_id未配置」)。
  */
 private fun withConfiguredSuffix(what: String): String {
-    val last = what.lastOrNull() ?: return "未配置"
-    return if (last.code in 33..127) what + " 未配置" else what + "未配置"
+    val last = what.lastOrNull() ?: return "Not configured"
+    return if (last.code in 33..127) what + " not configured" else what + "Not configured"
 }
 
 /**
@@ -104,24 +104,24 @@ enum class HttpTarget { Model, UpdateSource }
 /** HTTP 状态码 → 可读文案(与产品和原型文案保持一致)。 */
 fun httpErrorMessage(code: Int, target: HttpTarget = HttpTarget.Model): String = when (target) {
     HttpTarget.Model -> when (code) {
-        400 -> "请求无效(400):请检查模型 ID 与请求体"
-        401 -> "鉴权失败(401):请检查 API Key"
-        403 -> "无权限(403):API Key 无权访问该模型"
-        404 -> "端点不存在(404):请确认 /chat/completions 路径"
-        408 -> "服务端超时(408):请稍后再试"
-        409 -> "请求冲突(409):请稍后再试"
-        422 -> "参数不合法(422):请检查模型 ID 与端点"
-        429 -> "请求过于频繁(429):请稍后再试"
-        in 500..599 -> "服务端错误($code):请稍后再试"
-        else -> "请求失败(HTTP $code)"
+        400 -> "Invalid request (400): check the Model ID and request body"
+        401 -> "Authentication failed (401): check the API key"
+        403 -> "Permission denied (403): this API key cannot access the model"
+        404 -> "Endpoint not found (404): check the /chat/completions path"
+        408 -> "Server timeout (408): try again later"
+        409 -> "Request conflict (409): try again later"
+        422 -> "Invalid parameters (422): check the Model ID and endpoint"
+        429 -> "Too many requests (429): try again later"
+        in 500..599 -> "Server error ($code): try again later"
+        else -> "Request failed (HTTP $code)"
     }
 
     HttpTarget.UpdateSource -> when (code) {
-        401, 403 -> "更新源拒绝访问($code):请确认该地址无需登录即可读取"
-        404 -> "更新源不存在(404):请检查更新地址是否指向版本信息文件"
-        429 -> "更新源请求过于频繁(429):请稍后再试"
-        in 500..599 -> "更新源服务端错误($code):请稍后再试"
-        else -> "检查更新失败(HTTP $code)"
+        401, 403 -> "Update source denied access ($code): check that it is accessible without sign-in"
+        404 -> "Update source not found (404): check that the URL points to the version manifest"
+        429 -> "Update source rate limited (429): try again later"
+        in 500..599 -> "Update source server error ($code): try again later"
+        else -> "Could not check for updates (HTTP $code)"
     }
 }
 

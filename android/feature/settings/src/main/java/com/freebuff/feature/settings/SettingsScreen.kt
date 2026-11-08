@@ -47,8 +47,8 @@ private fun ToolPermissionSection(viewModel: SettingsViewModel) {
     var expanded by remember { mutableStateOf(false) }
 
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("工具权限", color = t.text2, fontSize = 13.5.sp, modifier = Modifier.weight(1f))
-        Text(if (overrides.isEmpty()) "默认" else overrides.size.toString() + " 项已自定义 · 展开调整 ⌄",
+        Text("Tool permissions", color = t.text2, fontSize = 13.5.sp, modifier = Modifier.weight(1f))
+        Text(if (overrides.isEmpty()) "Default" else overrides.size.toString() + " customized · Expand to adjust ⌄",
             color = t.text3, fontSize = 11.sp,
             modifier = Modifier.clickable { expanded = !expanded })
     }
@@ -65,7 +65,7 @@ private fun ToolPermissionSection(viewModel: SettingsViewModel) {
                     Text(tool.name, color = t.text3, fontSize = 9.5.sp)
                 }
                 SegRow(
-                    listOf("免确认", "需确认", "禁止"),
+                    listOf("Auto-allow", "Ask first", "Blocked"),
                     when (effective) {
                         ToolPermission.ALLOW -> 0
                         ToolPermission.CONFIRM -> 1
@@ -82,7 +82,7 @@ private fun ToolPermissionSection(viewModel: SettingsViewModel) {
             }
         }
         Spacer(Modifier.height(6.dp))
-        Text("免确认:静默执行;需确认:每次执行前弹窗;禁止:不执行并告知模型。改动即时生效。",
+        Text("Auto-allow runs immediately. Ask first shows a confirmation. Blocked prevents execution and tells the model. Changes apply immediately.",
             color = t.text3, fontSize = 10.sp)
     }
 }
@@ -104,36 +104,36 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val clearArmed by viewModel.clearArmed.collectAsState()
 
     Column(Modifier.fillMaxSize().padding(top = 54.dp)) {
-        Text("设置", color = t.text, fontSize = 24.sp, fontWeight = FontWeight.Bold,
+        Text("Settings", color = t.text, fontSize = 24.sp, fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(horizontal = 20.dp))
         Spacer(Modifier.height(6.dp))
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .padding(start = 16.dp, end = 16.dp, bottom = 130.dp)) {
 
             /* ---------------- 外观 ---------------- */
-            SectionLabel("外观", Modifier.padding(top = 16.dp, bottom = 8.dp))
+            SectionLabel("Appearance", Modifier.padding(top = 16.dp, bottom = 8.dp))
             RowCard {
-                val themes = listOf("跟随系统", "浅色", "深色")
+                val themes = listOf("System", "Light", "Dark")
                 val idx = when (themeMode) { "light" -> 1; "dark" -> 2; else -> 0 }
-                Text("主题", color = t.text2, fontSize = 13.5.sp,
+                Text("Theme", color = t.text2, fontSize = 13.5.sp,
                     modifier = Modifier.padding(top = 8.dp, bottom = 10.dp))
                 SegRow(themes, idx) { i -> viewModel.setTheme(listOf("system", "light", "dark")[i]) }
             }
 
             /* ---------------- 模型 ---------------- */
-            SectionLabel("模型", Modifier.padding(top = 18.dp, bottom = 8.dp))
+            SectionLabel("Model", Modifier.padding(top = 18.dp, bottom = 8.dp))
             RowCard {
                 SetRow(
                     // 图标一律用等宽字形符号:emoji(⚡/🗑/💬)在浅色主题下只按自己的彩色渲染,实测对比度仅 1.5–2.6:1
                     icon = "✦",
-                    title = modelName.ifBlank { "选择模型" },
-                    sub = "点击选择对话使用的模型",
+                    title = modelName.ifBlank { "Choose a model" },
+                    sub = "Tap to choose the model for chats",
                     onClick = { viewModel.openModelSheet() },
                 )
                 Spacer(Modifier.height(14.dp))
-                Text("工具调用", color = t.text2, fontSize = 13.5.sp,
+                Text("Tool calling", color = t.text2, fontSize = 13.5.sp,
                     modifier = Modifier.padding(bottom = 10.dp))
-                SegRow(listOf("开启", "关闭"), if (toolsEnabled) 0 else 1) { i ->
+                SegRow(listOf("On", "Off"), if (toolsEnabled) 0 else 1) { i ->
                     viewModel.setToolsEnabled(i == 0)
                 }
                 if (toolsEnabled) {
@@ -141,16 +141,16 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                     ToolPermissionSection(viewModel)
                 }
                 Spacer(Modifier.height(14.dp))
-                Text("上下文记忆", color = t.text2, fontSize = 13.5.sp,
+                Text("Context memory", color = t.text2, fontSize = 13.5.sp,
                     modifier = Modifier.padding(bottom = 10.dp))
-                SegRow(listOf("开启", "关闭"), if (memoryEnabled) 0 else 1) { i ->
+                SegRow(listOf("On", "Off"), if (memoryEnabled) 0 else 1) { i ->
                     viewModel.setMemoryEnabled(i == 0)
                 }
                 Spacer(Modifier.height(14.dp))
-                Text("深度思考", color = t.text2, fontSize = 13.5.sp,
+                Text("Reasoning", color = t.text2, fontSize = 13.5.sp,
                     modifier = Modifier.padding(bottom = 10.dp))
                 SegRow(
-                    listOf("关闭", "自动", "开启"),
+                    listOf("Off", "Auto", "On"),
                     when (reasoningMode) {
                         com.freebuff.core.model.Reasoning.MODE_OFF -> 0
                         com.freebuff.core.model.Reasoning.MODE_ON -> 2
@@ -167,55 +167,55 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 }
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "自动:按模型识别思考参数(DeepSeek 推理 / Qwen3 / GPT-5 / GLM 等);" +
-                        "开启:未识别的模型也试 enable_thinking。思考内容折叠在回复上方的「思考过程」里。",
+                    "Auto detects reasoning parameters for supported models (DeepSeek, Qwen3, GPT-5, GLM, etc.). " +
+                        "On also tries enable_thinking for unrecognized models. Reasoning appears in a collapsible section above replies.",
                     color = t.text3, fontSize = 10.sp,
                 )
             }
 
             /* ---------------- 集成 ---------------- */
-            SectionLabel("集成", Modifier.padding(top = 18.dp, bottom = 8.dp))
+            SectionLabel("Integrations", Modifier.padding(top = 18.dp, bottom = 8.dp))
             RowCard {
                 SetRow(
                     icon = "◈",
-                    title = "Git 账号",
-                    sub = "授权后可在发起任务时直接读取你的仓库",
-                    trailing = if (git.connected) git.name.ifEmpty { git.login } + " · 已连接" else "未连接",
+                    title = "Git account",
+                    sub = "Connect to load your repositories when starting a task",
+                    trailing = if (git.connected) git.name.ifEmpty { git.login } + " · Connected" else "Not connected",
                     accent = git.connected,
                     onClick = { navigator.openSheet(AppNavState.SHEET_GIT) },
                 )
                 Spacer(Modifier.height(14.dp))
-                Text("仓库地址解析", color = t.text2, fontSize = 13.5.sp,
+                Text("Repository URL parsing", color = t.text2, fontSize = 13.5.sp,
                     modifier = Modifier.padding(bottom = 10.dp))
-                SegRow(listOf("严格解析", "宽松原样"),
+                SegRow(listOf("Strict", "As entered"),
                     if (repoParse == "strict") 0 else 1) { i ->
                     viewModel.setRepoParse(if (i == 0) "strict" else "loose")
                 }
                 Spacer(Modifier.height(14.dp))
                 SetRow(
                     icon = "▣",
-                    title = "自定义模型",
-                    sub = "接入 OpenAI 兼容 API 端点,可作为对话模型使用",
-                    trailing = if (customModels.isEmpty()) "未添加" else customModels.size.toString() + " 个",
+                    title = "Custom models",
+                    sub = "Add an OpenAI-compatible API endpoint to use as a chat model",
+                    trailing = if (customModels.isEmpty()) "Not added" else customModels.size.toString() + "",
                     accent = customModels.isNotEmpty(),
                     onClick = { navigator.openSheet(AppNavState.SHEET_CUSTOM_MODELS) },
                 )
             }
 
             /* ---------------- 会话与数据 ---------------- */
-            SectionLabel("会话与数据", Modifier.padding(top = 18.dp, bottom = 8.dp))
+            SectionLabel("Chats and data", Modifier.padding(top = 18.dp, bottom = 8.dp))
             RowCard {
                 SetRow(
                     icon = "▤",
-                    title = "数据保存在本机",
-                    sub = "会话、设置与自定义模型仅存于当前设备,不上传",
+                    title = "Data stored on this device",
+                    sub = "Chats, settings, and custom models are stored locally and are not uploaded",
                 )
                 Spacer(Modifier.height(4.dp))
                 SetRow(
                     icon = "✕",
-                    title = if (clearArmed) "再次点击确认清除" else "清除全部会话",
-                    sub = if (clearArmed) "2 秒内再次点击生效,超时自动取消"
-                    else "删除本机全部会话(" + sessionCount + " 个),不可恢复",
+                    title = if (clearArmed) "Tap again to confirm" else "Clear all chats",
+                    sub = if (clearArmed) "Tap again within 2 seconds; otherwise this cancels automatically"
+                    else "Delete all local chats (" + sessionCount + "). This cannot be undone.",
                     danger = true,
                     onClick = {
                         if (clearArmed) viewModel.clearAllSessions() else viewModel.armClear()
@@ -224,31 +224,31 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             }
 
             /* ---------------- 关于 ---------------- */
-            SectionLabel("关于", Modifier.padding(top = 18.dp, bottom = 8.dp))
+            SectionLabel("About", Modifier.padding(top = 18.dp, bottom = 8.dp))
             RowCard {
                 SetRow(
                     icon = "ⓘ",
-                    title = "关于 Freebuff Mobile",
-                    sub = "能力说明、数据去向与后续计划",
+                    title = "About Freebuff Mobile",
+                    sub = "Features, data handling, and future plans",
                     onClick = { navigator.openSheet(AppNavState.SHEET_ABOUT) },
                 )
                 SetRow(
                     icon = "↻",
-                    title = "版本",
-                    sub = "点击检查最新版本",
+                    title = "Version",
+                    sub = "Tap to check for the latest version",
                     trailing = "v" + viewModel.appVersion,
                     onClick = { navigator.openSheet(AppNavState.SHEET_UPDATE) },
                 )
                 SetRow(
                     icon = "↗",
-                    title = "官方网站",
+                    title = "Website",
                     sub = OFFICIAL_SITE,
                     onClick = { openExternal(context, OFFICIAL_SITE) },
                 )
                 SetRow(
                     icon = "✎",
-                    title = "反馈与建议",
-                    sub = "在官方开源仓库提交 issue",
+                    title = "Feedback",
+                    sub = "Open an issue in this fork's repository",
                     onClick = { openExternal(context, FEEDBACK_URL) },
                 )
             }

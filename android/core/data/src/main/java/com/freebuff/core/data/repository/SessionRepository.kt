@@ -39,8 +39,8 @@ class SessionRepository @Inject constructor(
         val id = uid()
         val maxSort = dao.allSessions().maxOfOrNull { it.sort } ?: 0L
         val now = System.currentTimeMillis()
-        dao.upsertSession(SessionEntity(id, title, "刚刚", "", maxSort + 1, now))
-        return Session(id, title, "刚刚", "", emptyList(), now)
+        dao.upsertSession(SessionEntity(id, title, "Just now", "", maxSort + 1, now))
+        return Session(id, title, "Just now", "", emptyList(), now)
     }
 
     /** 追加消息并刷新会话预览。返回更新后的会话。 */

@@ -79,7 +79,7 @@ class GithubApiTest {
     @Test
     fun `轮询拒绝返回 Denied`() = runTest {
         server.enqueue(MockResponse().setBody("""{"error":"access_denied"}"""))
-        assertEquals(DevicePoll.Denied("授权被拒绝"), (api.pollToken("cid", "dev") as ApiResult.Ok).data)
+        assertEquals(DevicePoll.Denied("Authorization denied"), (api.pollToken("cid", "dev") as ApiResult.Ok).data)
     }
 
     @Test
@@ -115,7 +115,7 @@ class GithubApiTest {
         assertEquals("main", repos[0].branch)
         assertEquals("官方仓库", repos[0].desc)
         assertEquals("main", repos[1].branch)
-        assertEquals("私有仓库", repos[1].desc)
+        assertEquals("Private repository", repos[1].desc)
     }
 
     @Test

@@ -102,7 +102,7 @@ class ChatRepositoryTest {
             fail("应抛出异常")
         } catch (e: ApiError.Http) {
             assertEquals(401, e.code)
-            assertEquals("鉴权失败(401):请检查 API Key", e.userMessage)
+            assertEquals("Authentication failed (401): check the API key", e.userMessage)
             assertTrue("应保留响应片段,实际: ${e.body}", e.body.contains("unauthorized"))
         }
     }

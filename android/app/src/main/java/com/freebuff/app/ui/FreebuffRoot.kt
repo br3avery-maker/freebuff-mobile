@@ -92,7 +92,7 @@ fun FreebuffRoot(navigator: AppNavigator) {
             onCopy = {
                 CrashReporter.readLast(context)?.let { text ->
                     CrashReporter.copyToClipboard(context, text)
-                    navigator.showSnack("崩溃堆栈已复制,可粘贴发给开发者")
+                    navigator.showSnack("Crash details copied. Paste them to send to the developer.")
                 }
                 CrashReporter.clear(context)
             },
@@ -246,7 +246,7 @@ private fun BottomBar(navigator: AppNavigator, modifier: Modifier = Modifier) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        TabItem("会话", navState.route == AppNavState.ROUTE_HOME, navState.route != AppNavState.ROUTE_HOME) {
+        TabItem("Chats", navState.route == AppNavState.ROUTE_HOME, navState.route != AppNavState.ROUTE_HOME) {
             navigator.navigate(AppNavState.ROUTE_HOME)
         }
         Box(
@@ -259,7 +259,7 @@ private fun BottomBar(navigator: AppNavigator, modifier: Modifier = Modifier) {
         ) {
             Text("+", color = t.accentInk, fontSize = 26.sp, fontWeight = FontWeight.Bold)
         }
-        TabItem("设置", navState.route == AppNavState.ROUTE_SETTINGS, navState.route != AppNavState.ROUTE_SETTINGS) {
+        TabItem("Settings", navState.route == AppNavState.ROUTE_SETTINGS, navState.route != AppNavState.ROUTE_SETTINGS) {
             navigator.navigate(AppNavState.ROUTE_SETTINGS)
         }
     }
@@ -279,12 +279,12 @@ private fun CrashBanner(onCopy: () -> Unit, onDismiss: () -> Unit) {
             Text("⚠", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.width(8.dp))
             Text(
-                "上次异常退出——可复制崩溃信息帮助定位",
+                "The app closed unexpectedly. Copy the crash details to help diagnose it.",
                 color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f),
             )
             Text(
-                "忽略 ×",
+                "Dismiss ×",
                 color = Color.White.copy(alpha = 0.75f), fontSize = 12.sp,
                 modifier = Modifier.clip(RoundedCornerShape(8.dp))
                     .clickable { onDismiss() }.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -292,7 +292,7 @@ private fun CrashBanner(onCopy: () -> Unit, onDismiss: () -> Unit) {
         }
         Spacer(Modifier.height(6.dp))
         Text(
-            "复制堆栈",
+            "Copy crash details",
             color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold,
             modifier = Modifier.clip(RoundedCornerShape(8.dp))
                 .background(Color.White.copy(alpha = 0.18f))

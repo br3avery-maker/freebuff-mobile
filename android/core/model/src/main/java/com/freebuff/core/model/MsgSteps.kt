@@ -10,25 +10,25 @@ package com.freebuff.core.model
 object MsgSteps {
 
     /** 起手步骤:连接模型。 */
-    const val CONNECT = "连接"
+    const val CONNECT = "Connection"
 
     /** 用户按下停止、且一个字都没生成时填入气泡(否则会留下一个空回复,看上去像坏了)。 */
-    const val STOPPED_NOTE = "(已停止生成)"
+    const val STOPPED_NOTE = "(Generation stopped)"
 
     /** 用户按下停止、但已有部分内容时的尾部标注。 */
-    const val STOPPED_TAIL = "\n\n(已停止生成,以上为已经写出的内容)"
+    const val STOPPED_TAIL = "\n\n(Generation stopped. The partial reply is shown above.)"
 
     /** 模型什么文字都没返回、也没有工具卡片时的提示(否则会留下一个神秘的空回复)。 */
-    const val EMPTY_REPLY_NOTE = "(模型没有返回内容;可直接重试,或换一个模型)"
+    const val EMPTY_REPLY_NOTE = "(The model returned no content. Retry or choose another model.)"
 
     /** 生成中的占位时间(不是真实时刻):冷启动修复时清掉,免得历史里永久挂着一个假时间戳。 */
-    const val GENERATING = "正在生成"
+    const val GENERATING = "Generating"
 
     /**
      * 上一次生成被中断(进程被杀/崩溃)时,那条半成品消息应显示的提示。
      * 它和 EMPTY_REPLY_NOTE 的区别:后者是模型真的答了空,前者是我们没写完就没了。
      */
-    const val INTERRUPTED_NOTE = "(上次生成被中断,可重新发送)"
+    const val INTERRUPTED_NOTE = "(The previous generation was interrupted. You can send again.)"
 
     /**
      * 冷启动修复:修掉上一次进程被杀时留在库里的「半条消息」。
@@ -45,11 +45,11 @@ object MsgSteps {
         msg.role != "agent" -> msg
         else -> msg.copy(
             text = if (msg.text.isBlank()) INTERRUPTED_NOTE else msg.text,
-            time = if (msg.time == GENERATING) "" else msg.time,
+            time = if (msg.time == GENERATING || msg.time == "正在生成") "" else msg.time,
             steps = withoutTransient(msg.steps),
             tools = msg.tools.map { card ->
                 if (card.isRunning || card.isWaiting) {
-                    card.copy(state = "error", output = if (card.output.isBlank()) "(未完成)" else card.output)
+                    card.copy(state = "error", output = if (card.output.isBlank()) "(incomplete)" else card.output)
                 } else card
             },
         )
@@ -70,24 +70,24 @@ object MsgSteps {
         }
     }
 
-    private const val ROUND_PREFIX = "第 "
-    private const val RETRY_PREFIX = "重试 "
+    private const val ROUND_PREFIX = "Round "
+    private const val RETRY_PREFIX = "Retry "
 
     /** 第 n 轮工具循环。 */
-    fun round(n: Int): String = "$ROUND_PREFIX$n 轮"
+    fun round(n: Int): String = "$ROUND_PREFIX$n"
 
     /** 本轮在做什么:无调用 = 生成回答;有调用 = 列出工具名。 */
     fun calling(tools: List<String>): String =
-        if (tools.isEmpty()) "正在生成回答…" else "调用 " + tools.joinToString("、")
+        if (tools.isEmpty()) "Generating reply…" else "Calling " + tools.joinToString(", ")
 
     /** 重试步骤(历史性,收尾保留)。 */
     fun retry(n: Int): String = "$RETRY_PREFIX$n"
 
     /** 过程性步骤:收尾时清除(重试记录是历史性的,保留)。 */
     fun isTransient(name: String): Boolean = when {
-        name.startsWith(RETRY_PREFIX) -> false
-        name == CONNECT -> true
-        name.startsWith(ROUND_PREFIX) -> true
+        name.startsWith(RETRY_PREFIX) || name.startsWith("重试 ") -> false
+        name == CONNECT || name == "连接" -> true
+        name.startsWith(ROUND_PREFIX) || name.startsWith("第 ") -> true
         else -> false
     }
 
@@ -102,7 +102,7 @@ object MsgSteps {
      */
     fun digest(rows: List<Pair<String, String>>, maxCharsPerLine: Int = 160): String {
         if (rows.isEmpty()) return ""
-        return rows.joinToString("\n", prefix = "\n\n最近一轮的执行结果:\n") { (name, out) ->
+        return rows.joinToString("\n", prefix = "\n\nResults from the most recent round:\n") { (name, out) ->
             "· $name:" + out.lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty().take(maxCharsPerLine)
         }
     }

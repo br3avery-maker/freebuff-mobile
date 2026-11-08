@@ -62,7 +62,7 @@ fun GitSheet(viewModel: SettingsViewModel = hiltViewModel()) {
         awaiting?.let { openExternal(context, it.verificationUri) }
     }
 
-    SheetScaffold("Git 账号", "关联后可在发起任务时直接读取你的仓库") {
+    SheetScaffold("Git account", "Connect to load your repositories when starting a task") {
         when {
             g.connected -> ConnectedCard(
                 provider = g.provider,
@@ -100,12 +100,12 @@ private fun ConnectedCard(provider: String, login: String, name: String, onRevok
             Spacer(Modifier.width(10.dp))
             Column {
                 Text(name.ifEmpty { login }, color = t.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                Text(login + " · 已连接", color = t.text3, fontSize = 11.5.sp,
+                Text(login + " · Connected", color = t.text3, fontSize = 11.5.sp,
                     modifier = Modifier.padding(top = 2.dp))
             }
         }
         Spacer(Modifier.height(14.dp))
-        Text("断开连接", color = t.danger, fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
+        Text("Disconnect", color = t.danger, fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
             modifier = Modifier.clip(RFull).clickable { onRevoke() }.padding(horizontal = 18.dp, vertical = 9.dp))
     }
 }
@@ -121,30 +121,30 @@ private fun AwaitingCard(
 ) {
     val t = LocalTokens.current
     Column(Modifier.fillMaxWidth().clip(R14).background(t.surface2).padding(16.dp)) {
-        Text("在浏览器完成授权", color = t.text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-        Text("已打开 GitHub 授权页,输入下面的用户码并确认:", color = t.text3, fontSize = 11.5.sp,
+        Text("Finish authorization in your browser", color = t.text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Text("The GitHub authorization page is open. Enter this code and confirm:", color = t.text3, fontSize = 11.5.sp,
             modifier = Modifier.padding(top = 4.dp))
         Spacer(Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(userCode, color = t.accent, fontSize = 22.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(t.surface).padding(horizontal = 14.dp, vertical = 8.dp))
             Spacer(Modifier.width(10.dp))
-            Text("复制", color = t.text2, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+            Text("Copy", color = t.text2, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.clip(RFull).clickable { onCopy(userCode) }.padding(horizontal = 12.dp, vertical = 8.dp))
         }
         Spacer(Modifier.height(6.dp))
         Text(verificationUri, color = t.text3, fontSize = 11.sp)
         Spacer(Modifier.height(14.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("重新打开授权页", color = t.accentInk, fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
+            Text("Open authorization page again", color = t.accentInk, fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.clip(RFull).background(t.accent).clickable { onOpen(verificationUri) }
                     .padding(horizontal = 16.dp, vertical = 9.dp))
             Spacer(Modifier.width(10.dp))
-            Text("取消", color = t.text2, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold,
+            Text("Cancel", color = t.text2, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.clip(RFull).clickable { onCancel() }.padding(horizontal = 14.dp, vertical = 9.dp))
         }
         Spacer(Modifier.height(10.dp))
-        Text("等待授权中…保持本页打开,完成后会自动关联", color = t.text3, fontSize = 11.sp)
+        Text("Waiting for authorization… Keep this page open to connect automatically.", color = t.text3, fontSize = 11.sp)
     }
 }
 
@@ -177,6 +177,6 @@ private fun ProviderList(
         }
         Spacer(Modifier.height(10.dp))
     }
-    Text("将通过 GitHub 设备流授权(浏览器输入用户码),只读取账号与仓库列表",
+    Text("Authorize with GitHub's device flow using a code in your browser. Only your account and repository list are read.",
         color = t.text3, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp, start = 4.dp))
 }
